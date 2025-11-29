@@ -15,7 +15,7 @@ def create_main_menu_keyboard(has_active_journey: bool = False) -> ReplyKeyboard
     if has_active_journey:
         buttons = [
             [KeyboardButton(text="⏰ Ввести время")],
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="❌ Отменить поездку")]
+            [KeyboardButton(text="❌ Отменить поездку")]
         ]
     else:
         buttons = [
@@ -45,7 +45,7 @@ def create_checkpoint_keyboard() -> ReplyKeyboardMarkup:
     """Create keyboard for checkpoint time entry."""
     buttons = [
         [KeyboardButton(text="⏰ Сейчас")],
-        [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="❌ Отменить поездку")]
+        [KeyboardButton(text="❌ Отменить поездку")]
     ]
     return ReplyKeyboardMarkup(
         keyboard=buttons,
