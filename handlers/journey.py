@@ -17,7 +17,10 @@ from utils import (
     create_calendar,
     get_next_month,
     get_prev_month,
-    create_time_keyboard
+    create_time_keyboard,
+    create_main_menu_keyboard,
+    create_cancel_confirmation_keyboard,
+    create_checkpoint_keyboard
 )
 
 router = Router()
@@ -40,17 +43,12 @@ def create_carrier_keyboard(carriers: List[Dict[str, Any]]) -> ReplyKeyboardMark
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def create_now_skip_keyboard(show_skip: bool = False) -> ReplyKeyboardMarkup:
-    """Create keyboard with 'Now' and optionally 'Skip' options."""
-    buttons = [[KeyboardButton(text="⏰ Сейчас")]]
-    if show_skip:
-        buttons.append([KeyboardButton(text="⏭ Пропустить")])
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Start command - show welcome and instructions."""
+    # Check if user has active journey
+    active_journey = await db.get_user_active_journey(message.from_user.id)
+
     welcome_text = (
         "👋 Добро пожаловать в Granica Bot!\n\n"
         "Этот бот помогает отслеживать время прохождения границы между Беларусью и Польшей/Литвой.\n\n"
@@ -60,22 +58,26 @@ async def cmd_start(message: Message, state: FSMContext):
         "3. Отмечайте контрольные точки по мере прохождения\n"
         "4. Просматривайте статистику и помогайте другим планировать поездки\n\n"
         "⏰ Все время автоматически обрабатывается в UTC\n\n"
-        "Используйте /new чтобы начать отслеживание поездки\n"
-        "Используйте /stats чтобы посмотреть последние данные о границе\n"
-        "Используйте /cancel чтобы отменить текущую поездку"
+        "Используйте меню внизу для навигации"
     )
-    await message.answer(welcome_text)
+
+    keyboard = create_main_menu_keyboard(has_active_journey=active_journey is not None)
+    await message.answer(welcome_text, reply_markup=keyboard)
 
 
 @router.message(Command("new"))
+@router.message(F.text == "🆕 Новая поездка")
 async def cmd_new_journey(message: Message, state: FSMContext):
     """Start a new journey."""
     # Check if user has an active journey
     active_journey = await db.get_user_active_journey(message.from_user.id)
     if active_journey:
+        keyboard = create_main_menu_keyboard(has_active_journey=True)
         await message.answer(
-            "⚠️ У вас уже есть активная поездка. Используйте /cancel чтобы отменить её.",
-            reply_markup=ReplyKeyboardRemove()
+            "⚠️ У вас уже есть активная поездка.\n\n"
+            "Используйте кнопку '⏰ Ввести время' чтобы продолжить,\n"
+            "или '❌ Отменить поездку' чтобы начать новую.",
+            reply_markup=keyboard
         )
         return
 
@@ -383,7 +385,7 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
     await state.set_state(state_mapping[checkpoint_index])
     await state.update_data(current_checkpoint_id=checkpoint["id"])
 
-    keyboard = create_now_skip_keyboard(show_skip=False)
+    keyboard = create_checkpoint_keyboard()
 
     # Handle both Message and CallbackQuery
     if isinstance(message_or_callback, Message):
@@ -497,14 +499,15 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
     thank_you_text = (
         "Спасибо за вклад! 🙏\n\n"
         "Ваши данные помогают другим планировать поездки.\n\n"
-        "Используйте /new чтобы отследить следующую поездку\n"
-        "Используйте /stats чтобы посмотреть статистику"
+        "Используйте меню внизу для навигации."
     )
+
+    keyboard = create_main_menu_keyboard(has_active_journey=False)
 
     # Handle both Message and CallbackQuery
     if isinstance(message_or_callback, Message):
-        await message_or_callback.answer(summary_text, reply_markup=ReplyKeyboardRemove())
-        await message_or_callback.answer(thank_you_text)
+        await message_or_callback.answer(summary_text)
+        await message_or_callback.answer(thank_you_text, reply_markup=keyboard)
     else:  # CallbackQuery
         await message_or_callback.bot.send_message(
             message_or_callback.message.chat.id,
@@ -512,34 +515,88 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
         )
         await message_or_callback.bot.send_message(
             message_or_callback.message.chat.id,
-            thank_you_text
+            thank_you_text,
+            reply_markup=keyboard
         )
 
     await state.clear()
 
 
 @router.message(Command("cancel"))
+@router.message(F.text == "❌ Отменить поездку")
 async def cmd_cancel(message: Message, state: FSMContext):
-    """Cancel current journey."""
+    """Cancel current journey - ask for confirmation."""
     current_state = await state.get_state()
-    if current_state is None:
-        await message.answer("Нет активной поездки для отмены.")
+
+    # Check if there's an active journey in database
+    active_journey = await db.get_user_active_journey(message.from_user.id)
+
+    if current_state is None and active_journey is None:
+        keyboard = create_main_menu_keyboard(has_active_journey=False)
+        await message.answer(
+            "Нет активной поездки для отмены.",
+            reply_markup=keyboard
+        )
         return
 
-    await state.clear()
+    # Ask for confirmation
+    keyboard = create_cancel_confirmation_keyboard()
     await message.answer(
-        "❌ Поездка отменена.\n\nИспользуйте /new чтобы начать новую поездку.",
-        reply_markup=ReplyKeyboardRemove()
+        "⚠️ Вы уверены что хотите отменить текущую поездку?\n\n"
+        "Все введённые данные будут потеряны.",
+        reply_markup=keyboard
+    )
+
+
+# Confirmation handlers for cancel
+@router.callback_query(F.data == "confirm_cancel_yes")
+async def confirm_cancel_yes(callback: CallbackQuery, state: FSMContext):
+    """User confirmed cancellation."""
+    await callback.answer()
+    await state.clear()
+
+    keyboard = create_main_menu_keyboard(has_active_journey=False)
+    await callback.message.edit_text(
+        "❌ Поездка отменена.\n\n"
+        "Используйте '🆕 Новая поездка' чтобы начать отслеживание."
+    )
+    await callback.message.answer(
+        "Главное меню:",
+        reply_markup=keyboard
+    )
+
+
+@router.callback_query(F.data == "confirm_cancel_no")
+async def confirm_cancel_no(callback: CallbackQuery, state: FSMContext):
+    """User declined cancellation."""
+    await callback.answer("Продолжаем поездку")
+
+    keyboard = create_checkpoint_keyboard()
+    await callback.message.edit_text(
+        "✅ Продолжаем отслеживание поездки.\n\n"
+        "Используйте '⏰ Ввести время' или '⏰ Сейчас' для ввода времени контрольной точки."
+    )
+    await callback.message.answer(
+        "Меню:",
+        reply_markup=keyboard
     )
 
 
 @router.message(Command("stats"))
-async def cmd_stats(message: Message):
+@router.message(F.text == "📊 Статистика")
+async def cmd_stats(message: Message, state: FSMContext):
     """Show latest border crossing statistics."""
     journeys = await db.get_latest_border_stats(limit=5)
 
+    # Check if user has active journey for menu
+    active_journey = await db.get_user_active_journey(message.from_user.id)
+    keyboard = create_main_menu_keyboard(has_active_journey=active_journey is not None)
+
     if not journeys:
-        await message.answer("📊 Данных пока нет. Будьте первым, кто внесёт свой вклад!")
+        await message.answer(
+            "📊 Данных пока нет. Будьте первым, кто внесёт свой вклад!",
+            reply_markup=keyboard
+        )
         return
 
     stats_text = "📊 Последние пересечения границы:\n\n"
@@ -559,5 +616,47 @@ async def cmd_stats(message: Message):
             stats_text += f"📅 {date_str}\n"
             stats_text += f"⌛ {minutes} минут\n\n"
 
-    await message.answer(stats_text)
+    await message.answer(stats_text, reply_markup=keyboard)
+
+
+# Handler for "Ввести время" button
+@router.message(F.text == "⏰ Ввести время")
+async def cmd_enter_time(message: Message, state: FSMContext):
+    """Handle 'Enter time' button press."""
+    current_state = await state.get_state()
+
+    # Get active journey
+    active_journey = await db.get_user_active_journey(message.from_user.id)
+
+    if current_state is None or active_journey is None:
+        keyboard = create_main_menu_keyboard(has_active_journey=False)
+        await message.answer(
+            "У вас нет активной поездки.\n\n"
+            "Используйте '🆕 Новая поездка' чтобы начать отслеживание.",
+            reply_markup=keyboard
+        )
+        return
+
+    # Get current checkpoint info
+    data = await state.get_data()
+    checkpoint_index = data.get("current_checkpoint_index", 0)
+    checkpoints = await db.get_mandatory_checkpoints()
+
+    if checkpoint_index >= len(checkpoints):
+        await message.answer(
+            "Все контрольные точки уже пройдены!",
+            reply_markup=create_main_menu_keyboard(has_active_journey=False)
+        )
+        return
+
+    checkpoint = checkpoints[checkpoint_index]
+    checkpoint_name = CHECKPOINT_NAMES.get(checkpoint["name"], checkpoint["name"])
+
+    keyboard = create_checkpoint_keyboard()
+    await message.answer(
+        f"📍 Контрольная точка {checkpoint_index + 1}/7\n"
+        f"{checkpoint_name}\n\n"
+        f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+        reply_markup=keyboard
+    )
 

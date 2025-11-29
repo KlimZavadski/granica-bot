@@ -14,6 +14,11 @@ from .calendar import (
     get_prev_month
 )
 from .time_keyboard import create_time_keyboard
+from .keyboards import (
+    create_main_menu_keyboard,
+    create_cancel_confirmation_keyboard,
+    create_checkpoint_keyboard
+)
 
 __all__ = [
     "to_utc",
@@ -26,6 +31,9 @@ __all__ = [
     "create_calendar",
     "get_next_month",
     "get_prev_month",
-    "create_time_keyboard"
+    "create_time_keyboard",
+    "create_main_menu_keyboard",
+    "create_cancel_confirmation_keyboard",
+    "create_checkpoint_keyboard"
 ]
 
