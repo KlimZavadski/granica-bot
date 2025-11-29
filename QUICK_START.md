@@ -105,6 +105,14 @@ Expected output:
 
 ## Step 6: Run the Bot
 
+**For development with hot reload:**
+
+```bash
+./scripts/dev.sh
+```
+
+**Or for production:**
+
 ```bash
 python3 bot.py
 ```
@@ -114,6 +122,8 @@ You should see:
 INFO - Starting Granica Bot...
 INFO - Environment: development
 ```
+
+With hot reload, bot will automatically restart when you change any `.py` file! 🔥
 
 ---
 
@@ -171,7 +181,10 @@ Once working:
 ## Common Commands
 
 ```bash
-# Start bot
+# Development (with hot reload)
+./scripts/dev.sh
+
+# Production
 python3 bot.py
 
 # Run tests

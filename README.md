@@ -70,8 +70,22 @@ This will create:
 
 ### 5. Run the Bot
 
+**Production:**
 ```bash
 python3 bot.py
+```
+
+**Development (with hot reload):**
+```bash
+# Option 1: Using dev script (recommended)
+./scripts/dev.sh
+
+# Option 2: Direct Python
+python3 dev.py
+
+# Option 3: Using watchfiles CLI
+pip install watchfiles
+watchfiles 'python3 bot.py' .
 ```
 
 ## Usage

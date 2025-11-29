@@ -1,0 +1,23 @@
+# Files to ignore for hot reload
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist/
+build/
+venv/
+env/
+.env
+.venv
+.git/
+.idea/
+.vscode/
+*.log
+.DS_Store
+*.db
+*.sqlite3
+

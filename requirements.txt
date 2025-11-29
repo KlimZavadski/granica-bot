@@ -6,3 +6,6 @@ pytz==2024.1
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
+# Development dependencies
+watchfiles==0.24.0  # Hot reload
+
