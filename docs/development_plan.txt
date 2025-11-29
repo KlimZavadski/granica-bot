@@ -1,0 +1,148 @@
+# **1. Granica Bot – Development Plan**
+
+Granica Bot — a Telegram bot for tracking trips through Belarus–Poland and Belarus–Lithuania borders in both directions.
+Telegram bot id - granica_bot_1
+
+---
+
+## **I. Architecture Overview**
+
+### **Tech Stack**
+
+* **Python**
+* **Supabase** (DB + auth + RPC)
+* **is_hosting** (deployment)
+* **Time Handling**:
+
+  * User device time → convert to **UTC**
+  * Database → always UTC timestamps
+* **Event-driven model**:
+
+  * Each checkpoint = structured event → timestamp → stored in DB.
+
+---
+
+## **II. Functional Roadmap (MVP → Iterations)**
+
+---
+
+## **Iteration 1 (MVP) — Core Checkpoint Tracking**
+
+### **Bot Features**
+
+* Welcome message + instructions.
+* Select a carrier from the list.
+* Set departure time.
+* Step-by-step input for mandatory border checkpoints:
+
+  * approaching the border
+  * entering checkpoint #1
+  * invited to passport control #1
+  * leaving checkpoint #1 to neutral zone
+  * entering checkpoint #2
+  * invited to passport control #2
+  * leaving checkpoint #2 (border exit)
+* Optional user-defined checkpoints:
+
+  * bus station stops
+  * sanitary stops
+* Viewing latest data on border crossing times.
+
+### **Database Structure (MVP)**
+
+1. **carriers**
+2. **routes**
+3. **journeys**
+4. **checkpoints**
+5. **journey_events**
+
+### **Key Risks**
+
+* Incorrect timezone handling → solved with strict UTC storage.
+* Telegram FSM failures → use aiogram FSM with storage.
+* Wrong checkpoint ordering → validate sequence.
+
+---
+
+## **Iteration 2 — Schedules + GPS Automation**
+
+### **New Functionality**
+
+* Automated scraping of bus schedules → Supabase `schedules`.
+* User can choose a trip from the preloaded schedules list.
+* Optional GPS-based checkpoint detection:
+
+  * user grants device location access
+  * geofence-based auto-checkpoint assignment
+  * fallback to manual input
+
+### **Risks**
+
+* Scraper instability → retries and error logging.
+* GPS noise → filtering + threshold radius logic.
+
+---
+
+## **Iteration 3 — Search, Analytics, Graphs**
+
+### **New Functionality**
+
+* Search by date or route.
+* Graphs:
+
+  * time spent at border (line, scatter)
+  * weekly / monthly / yearly distributions
+  * moving average charts
+* Time analytics:
+
+  * average transit duration
+  * median
+  * percentiles (p50 / p90 / p99)
+
+### **Risks**
+
+* Large data volume → need indexing on timestamp + checkpoint_id.
+
+---
+
+## **Iteration 4 — Automatic Notifications**
+
+### **New Functionality**
+
+* Users subscribe to "direction alerts".
+* Agent periodically calculates:
+
+  * moving averages (6–12h)
+  * detects significant increase or decrease in border time
+* Auto-notifications sent only with user consent.
+* Spike-filtering to avoid false alerts.
+
+### **Risks**
+
+* Poor-quality alerts → implement outlier filtering + minimum data thresholds.
+
+---
+
+## **III. User Interaction Flow (FSM)**
+
+```
+/start → show_instructions
+→ choose_carrier
+→ choose or enter departure_time
+→ sequential mandatory checkpoints input
+→ optional checkpoints
+→ summary
+→ (optional) show_latest_data
+```
+
+---
+
+## **IV. Supabase Schema (Final Form)**
+
+* carriers(id, name)
+* schedules(id, carrier_id, origin, destination, time_utc)
+* checkpoints(id, name, type, order, required)
+* journeys(id, user_id, schedule_id, departure_utc)
+* journey_events(id, journey_id, checkpoint_id, timestamp_utc, lat, lon)
+* analytics_cached(id, direction, date, p50, p90, p99, updated_at)
+* subscriptions(user_id, direction, enabled)
