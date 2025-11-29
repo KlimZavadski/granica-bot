@@ -76,6 +76,20 @@ class Database:
         )
         return response.data[0]
 
+    async def cancel_journey(self, journey_id: str) -> Dict[str, Any]:
+        """Mark journey as cancelled."""
+        response = (
+            self.client.table("journeys")
+            .update({
+                "completed": True,
+                "cancelled": True,
+                "notes": "Cancelled by user"
+            })
+            .eq("id", journey_id)
+            .execute()
+        )
+        return response.data[0]
+
     async def get_user_active_journey(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user's active (incomplete) journey."""
         response = (

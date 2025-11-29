@@ -27,7 +27,7 @@ router = Router()
 
 # Checkpoint display names
 CHECKPOINT_NAMES = {
-    "approaching_border": "🚌 Подъезжаем к границе",
+    "approaching_border": "🚌 Подъехали к шлагбауму",
     "entering_checkpoint_1": "🛂 Въезд на КПП #1",
     "invited_passport_control_1": "👮 Приглашены на паспортный контроль #1",
     "leaving_checkpoint_1": "🚪 Покидаем КПП #1 (нейтральная зона)",
@@ -553,6 +553,21 @@ async def cmd_cancel(message: Message, state: FSMContext):
 async def confirm_cancel_yes(callback: CallbackQuery, state: FSMContext):
     """User confirmed cancellation."""
     await callback.answer()
+
+    # Mark journey as cancelled in database
+    active_journey = await db.get_user_active_journey(callback.from_user.id)
+    if active_journey:
+        try:
+            # Try to use cancel_journey if cancelled field exists
+            await db.cancel_journey(active_journey["id"])
+            print(f"✅ Journey {active_journey['id']} marked as cancelled")
+        except Exception as e:
+            # Fallback to complete_journey if cancelled field doesn't exist yet
+            print(f"⚠️ cancel_journey failed, using complete_journey: {e}")
+            await db.complete_journey(active_journey["id"])
+            print(f"✅ Journey {active_journey['id']} marked as completed")
+
+    # Clear FSM state
     await state.clear()
 
     keyboard = create_main_menu_keyboard(has_active_journey=False)
