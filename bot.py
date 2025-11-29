@@ -14,6 +14,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Enable debug logging for aiogram if in development
+if settings.environment == "development":
+    logging.getLogger("aiogram").setLevel(logging.DEBUG)
+
 
 async def main():
     """Start the bot."""

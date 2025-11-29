@@ -60,14 +60,18 @@ def create_calendar(year: int = None, month: int = None) -> InlineKeyboardMarkup
     # Days of month
     for day in range(1, num_days + 1):
         date = datetime(year, month, day)
-        # Disable past dates
-        if date.date() < now.date():
-            week.append(InlineKeyboardButton(text=str(day), callback_data="cal_ignore"))
+
+        # Highlight today's date with brackets
+        if date.date() == now.date():
+            day_text = f"[{day}]"
         else:
-            week.append(InlineKeyboardButton(
-                text=str(day),
-                callback_data=f"cal_day_{year}_{month}_{day}"
-            ))
+            day_text = str(day)
+
+        # All dates are clickable (including past dates)
+        week.append(InlineKeyboardButton(
+            text=day_text,
+            callback_data=f"cal_day_{year}_{month}_{day}"
+        ))
 
         # If week is full (7 days), add to keyboard and start new week
         if len(week) == 7:

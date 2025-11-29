@@ -120,60 +120,96 @@ async def process_carrier_choice(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("cal_"))
 async def process_calendar_callback(callback: CallbackQuery, state: FSMContext):
     """Process calendar button callbacks."""
+    print(f"📅 Calendar callback: {callback.data}")
+
     current_state = await state.get_state()
+    print(f"Current state: {current_state}")
 
     # Only handle calendar in date selection state
     if current_state != JourneyStates.entering_departure_date:
+        print(f"⚠️ Wrong state, ignoring callback")
         await callback.answer()
         return
 
     data = callback.data.split("_")
     action = data[1]
+    print(f"Action: {action}")
 
     if action == "ignore":
         await callback.answer()
         return
 
     elif action == "cancel":
-        await state.clear()
-        await callback.message.edit_text(
-            "❌ Отменено. Используйте /new чтобы начать заново."
-        )
         await callback.answer()
+        await state.clear()
+        try:
+            await callback.message.edit_text(
+                "❌ Отменено. Используйте /new чтобы начать заново."
+            )
+        except Exception:
+            await callback.message.delete()
+            await callback.bot.send_message(
+                callback.message.chat.id,
+                "❌ Отменено. Используйте /new чтобы начать заново."
+            )
         return
 
     elif action == "prev":
         year, month = int(data[2]), int(data[3])
         prev_year, prev_month = get_prev_month(year, month)
         calendar = create_calendar(prev_year, prev_month)
-        await callback.message.edit_reply_markup(reply_markup=calendar)
         await callback.answer()
+        await callback.message.edit_reply_markup(reply_markup=calendar)
         return
 
     elif action == "next":
         year, month = int(data[2]), int(data[3])
         next_year, next_month = get_next_month(year, month)
         calendar = create_calendar(next_year, next_month)
-        await callback.message.edit_reply_markup(reply_markup=calendar)
         await callback.answer()
+        await callback.message.edit_reply_markup(reply_markup=calendar)
         return
 
     elif action == "day":
+        print(f"📅 Day selected!")
         year, month, day = int(data[2]), int(data[3]), int(data[4])
         selected_date = f"{year:04d}-{month:02d}-{day:02d}"
+        print(f"Selected date: {selected_date}")
 
         await state.update_data(departure_date=selected_date)
+        print(f"✅ State updated with date")
+
         await state.set_state(JourneyStates.entering_departure_time)
+        print(f"✅ State changed to entering_departure_time")
 
         time_keyboard = create_time_keyboard()
+        print(f"✅ Time keyboard created")
 
-        # Edit the calendar message to show selected date and time picker
-        await callback.message.edit_text(
-            f"✅ Дата выбрана: {day:02d}.{month:02d}.{year}\n\n"
-            "🕐 Выберите время отправления:",
-            reply_markup=time_keyboard
-        )
+        # Answer callback first to remove loading state
         await callback.answer()
+        print(f"✅ Callback answered")
+
+        try:
+            # Edit the calendar message to show selected date and time picker
+            print(f"📝 Trying to edit message...")
+            await callback.message.edit_text(
+                f"✅ Дата выбрана: {day:02d}.{month:02d}.{year}\n\n"
+                "🕐 Выберите время отправления:",
+                reply_markup=time_keyboard
+            )
+            print(f"✅ Message edited successfully!")
+        except Exception as e:
+            # If edit fails, send new message
+            print(f"❌ Error editing message: {e}")
+            print(f"📤 Sending new message instead...")
+            await callback.message.delete()
+            await callback.bot.send_message(
+                callback.message.chat.id,
+                f"✅ Дата выбрана: {day:02d}.{month:02d}.{year}\n\n"
+                "🕐 Выберите время отправления:",
+                reply_markup=time_keyboard
+            )
+            print(f"✅ New message sent!")
 
 
 @router.message(JourneyStates.entering_departure_date)
@@ -188,21 +224,36 @@ async def process_departure_date_text(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("time_"))
 async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     """Process time selection button callbacks."""
+    print(f"🕐 Time callback: {callback.data}")
+
     current_state = await state.get_state()
+    print(f"Current state: {current_state}")
 
     if current_state != JourneyStates.entering_departure_time:
+        print(f"⚠️ Wrong state, ignoring callback")
         await callback.answer()
         return
 
     time_str = callback.data.replace("time_", "")
+    print(f"Selected time: {time_str}")
+
+    # Answer callback first
+    await callback.answer()
 
     if time_str == "custom":
         # Switch to manual time entry
-        await callback.message.edit_text(
-            "✏️ Введите время отправления вручную (ЧЧ:ММ):\n"
-            "Пример: 14:30"
-        )
-        await callback.answer()
+        try:
+            await callback.message.edit_text(
+                "✏️ Введите время отправления вручную (ЧЧ:ММ):\n"
+                "Пример: 14:30"
+            )
+        except Exception:
+            await callback.message.delete()
+            await callback.bot.send_message(
+                callback.message.chat.id,
+                "✏️ Введите время отправления вручную (ЧЧ:ММ):\n"
+                "Пример: 14:30"
+            )
         return
 
     # Process selected time
@@ -233,15 +284,25 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     await state.update_data(checkpoints=[cp["id"] for cp in checkpoints])
 
     # Edit message to show journey created
-    await callback.message.edit_text(
-        f"✅ Поездка создана!\n"
-        f"🚌 Перевозчик: {data['carrier_name']}\n"
-        f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
-        f"Теперь отмечайте контрольные точки по мере прохождения.\n"
-        f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
-    )
-
-    await callback.answer()
+    try:
+        await callback.message.edit_text(
+            f"✅ Поездка создана!\n"
+            f"🚌 Перевозчик: {data['carrier_name']}\n"
+            f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
+            f"Теперь отмечайте контрольные точки по мере прохождения.\n"
+            f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
+        )
+    except Exception as e:
+        print(f"Error editing message: {e}")
+        await callback.message.delete()
+        await callback.bot.send_message(
+            callback.message.chat.id,
+            f"✅ Поездка создана!\n"
+            f"🚌 Перевозчик: {data['carrier_name']}\n"
+            f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
+            f"Теперь отмечайте контрольные точки по мере прохождения.\n"
+            f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
+        )
 
     # Move to first checkpoint
     await start_next_checkpoint(callback, state)
