@@ -5,7 +5,8 @@ from .timezone import (
     now_utc,
     parse_user_datetime,
     format_datetime_for_user,
-    validate_checkpoint_order
+    validate_checkpoint_order,
+    parse_db_timestamp
 )
 from .calendar import (
     create_calendar,
@@ -21,6 +22,7 @@ __all__ = [
     "parse_user_datetime",
     "format_datetime_for_user",
     "validate_checkpoint_order",
+    "parse_db_timestamp",
     "create_calendar",
     "get_next_month",
     "get_prev_month",

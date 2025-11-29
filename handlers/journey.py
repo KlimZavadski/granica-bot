@@ -13,6 +13,7 @@ from utils import (
     parse_user_datetime,
     format_datetime_for_user,
     validate_checkpoint_order,
+    parse_db_timestamp,
     create_calendar,
     get_next_month,
     get_prev_month,
@@ -431,7 +432,8 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
     # Validate timestamp order
     journey_events = await db.get_journey_events(data["journey_id"])
     if journey_events:
-        last_event_time = datetime.fromisoformat(journey_events[-1]["timestamp_utc"].replace("Z", "+00:00"))
+        last_event_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
+
         if not validate_checkpoint_order(timestamp_utc, last_event_time):
             await message.answer(
                 "❌ Неверное время: должно быть после предыдущей контрольной точки.\n"
@@ -469,13 +471,13 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
             event["checkpoints"]["name"]
         )
         time_str = format_datetime_for_user(
-            datetime.fromisoformat(event["timestamp_utc"].replace("Z", "+00:00"))
+            parse_db_timestamp(event["timestamp_utc"])
         )
         summary_text += f"{i+1}. {checkpoint_name}\n   ⏰ {time_str}\n"
 
         if i > 0:
-            prev_time = datetime.fromisoformat(events[i-1]["timestamp_utc"].replace("Z", "+00:00"))
-            curr_time = datetime.fromisoformat(event["timestamp_utc"].replace("Z", "+00:00"))
+            prev_time = parse_db_timestamp(events[i-1]["timestamp_utc"])
+            curr_time = parse_db_timestamp(event["timestamp_utc"])
             duration = curr_time - prev_time
             minutes = int(duration.total_seconds() / 60)
             summary_text += f"   ⌛ +{minutes} мин от предыдущей\n"
@@ -483,8 +485,8 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
 
     # Calculate total duration
     if len(events) >= 2:
-        start_time = datetime.fromisoformat(events[0]["timestamp_utc"].replace("Z", "+00:00"))
-        end_time = datetime.fromisoformat(events[-1]["timestamp_utc"].replace("Z", "+00:00"))
+        start_time = parse_db_timestamp(events[0]["timestamp_utc"])
+        end_time = parse_db_timestamp(events[-1]["timestamp_utc"])
         total_duration = end_time - start_time
         total_minutes = int(total_duration.total_seconds() / 60)
         summary_text += f"🏁 Общее время прохождения границы: {total_minutes} минут\n"
@@ -547,8 +549,8 @@ async def cmd_stats(message: Message):
         events = journey.get("journey_events", [])
 
         if len(events) >= 2:
-            start_time = datetime.fromisoformat(events[0]["timestamp_utc"].replace("Z", "+00:00"))
-            end_time = datetime.fromisoformat(events[-1]["timestamp_utc"].replace("Z", "+00:00"))
+            start_time = parse_db_timestamp(events[0]["timestamp_utc"])
+            end_time = parse_db_timestamp(events[-1]["timestamp_utc"])
             duration = end_time - start_time
             minutes = int(duration.total_seconds() / 60)
 

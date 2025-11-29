@@ -57,6 +57,27 @@ def format_datetime_for_user(dt: datetime, tz_name: str = "Europe/Minsk") -> str
     return local_dt.strftime("%Y-%m-%d %H:%M %Z")
 
 
+def parse_db_timestamp(timestamp_value) -> datetime:
+    """
+    Parse timestamp from database (can be string or datetime object).
+    Always returns timezone-aware datetime in UTC.
+
+    Args:
+        timestamp_value: Timestamp from database (string or datetime)
+
+    Returns:
+        Timezone-aware datetime in UTC
+    """
+    if isinstance(timestamp_value, str):
+        # Remove 'Z' and add UTC timezone
+        dt = datetime.fromisoformat(timestamp_value.replace("Z", "+00:00"))
+    else:
+        dt = timestamp_value
+
+    # Ensure it's UTC
+    return to_utc(dt)
+
+
 def validate_checkpoint_order(
     new_timestamp: datetime,
     previous_timestamp: Optional[datetime]
@@ -73,5 +94,10 @@ def validate_checkpoint_order(
     """
     if previous_timestamp is None:
         return True
-    return new_timestamp >= previous_timestamp
+
+    # Normalize both timestamps to UTC for comparison
+    new_utc = to_utc(new_timestamp)
+    prev_utc = to_utc(previous_timestamp)
+
+    return new_utc >= prev_utc
 
