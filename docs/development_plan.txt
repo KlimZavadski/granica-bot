@@ -1,7 +1,6 @@
 # **1. Granica Bot – Development Plan**
 
 Granica Bot — a Telegram bot for tracking trips through Belarus–Poland and Belarus–Lithuania borders in both directions.
-Telegram bot id - granica_bot_1
 
 ---
 
