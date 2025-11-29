@@ -59,6 +59,13 @@ ENVIRONMENT=development
 
 ## Step 4: Setup Database
 
+**Quick method (copy to clipboard):**
+```bash
+./scripts/migrate.sh
+```
+
+**Or manually:**
+
 1. Open Supabase Dashboard
 2. Go to SQL Editor
 3. Open `database/schema.sql` from this project
@@ -70,6 +77,8 @@ You should see:
 - ✅ Tables created
 - ✅ Indexes created
 - ✅ Default data inserted
+
+See `database/README.md` for more migration options (CLI, psql, etc.)
 
 ---
 

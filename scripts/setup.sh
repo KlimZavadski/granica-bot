@@ -45,12 +45,11 @@ else
     echo "✅ .env file found"
 fi
 
-echo ""
-echo "✅ Setup complete!"
-echo ""
-echo "Next steps:"
-echo "1. Create .env file with your credentials (if not done)"
-echo "2. Run database/schema.sql in your Supabase SQL Editor"
-echo "3. Start the bot: python bot.py"
-echo ""
+echo "🔄 Migrating database..."
+./scripts/migrate.sh
 
+echo "🔄 Testing setup..."
+python3 test_setup.py
+
+echo ""
+echo "✅ Setup complete! You can now start the bot with python3 bot.py"
