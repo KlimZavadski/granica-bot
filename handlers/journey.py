@@ -2,25 +2,34 @@
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from datetime import datetime
 from typing import List, Dict, Any
 
 from .states import JourneyStates
 from database import db
-from utils import now_utc, parse_user_datetime, format_datetime_for_user, validate_checkpoint_order
+from utils import (
+    now_utc,
+    parse_user_datetime,
+    format_datetime_for_user,
+    validate_checkpoint_order,
+    create_calendar,
+    get_next_month,
+    get_prev_month,
+    create_time_keyboard
+)
 
 router = Router()
 
 # Checkpoint display names
 CHECKPOINT_NAMES = {
-    "approaching_border": "🚌 Approaching the border",
-    "entering_checkpoint_1": "🛂 Entering checkpoint #1",
-    "invited_passport_control_1": "👮 Invited to passport control #1",
-    "leaving_checkpoint_1": "🚪 Leaving checkpoint #1 (neutral zone)",
-    "entering_checkpoint_2": "🛂 Entering checkpoint #2",
-    "invited_passport_control_2": "👮 Invited to passport control #2",
-    "leaving_checkpoint_2": "✅ Leaving checkpoint #2 (border exit)"
+    "approaching_border": "🚌 Подъезжаем к границе",
+    "entering_checkpoint_1": "🛂 Въезд на КПП #1",
+    "invited_passport_control_1": "👮 Приглашены на паспортный контроль #1",
+    "leaving_checkpoint_1": "🚪 Покидаем КПП #1 (нейтральная зона)",
+    "entering_checkpoint_2": "🛂 Въезд на КПП #2",
+    "invited_passport_control_2": "👮 Приглашены на паспортный контроль #2",
+    "leaving_checkpoint_2": "✅ Покидаем КПП #2 (выезд с границы)"
 }
 
 
@@ -32,9 +41,9 @@ def create_carrier_keyboard(carriers: List[Dict[str, Any]]) -> ReplyKeyboardMark
 
 def create_now_skip_keyboard(show_skip: bool = False) -> ReplyKeyboardMarkup:
     """Create keyboard with 'Now' and optionally 'Skip' options."""
-    buttons = [[KeyboardButton(text="⏰ Now")]]
+    buttons = [[KeyboardButton(text="⏰ Сейчас")]]
     if show_skip:
-        buttons.append([KeyboardButton(text="⏭ Skip")])
+        buttons.append([KeyboardButton(text="⏭ Пропустить")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -42,17 +51,17 @@ def create_now_skip_keyboard(show_skip: bool = False) -> ReplyKeyboardMarkup:
 async def cmd_start(message: Message, state: FSMContext):
     """Start command - show welcome and instructions."""
     welcome_text = (
-        "👋 Welcome to Granica Bot!\n\n"
-        "This bot helps track border crossing times between Belarus and Poland/Lithuania.\n\n"
-        "📝 How it works:\n"
-        "1. Select your bus carrier\n"
-        "2. Enter departure time\n"
-        "3. Record checkpoint timestamps as you pass them\n"
-        "4. View statistics and help others plan their trips\n\n"
-        "⏰ All times are automatically handled in UTC\n\n"
-        "Use /new to start tracking a new journey\n"
-        "Use /stats to see latest border crossing data\n"
-        "Use /cancel to cancel current journey"
+        "👋 Добро пожаловать в Granica Bot!\n\n"
+        "Этот бот помогает отслеживать время прохождения границы между Беларусью и Польшей/Литвой.\n\n"
+        "📝 Как это работает:\n"
+        "1. Выберите перевозчика\n"
+        "2. Укажите время отправления\n"
+        "3. Отмечайте контрольные точки по мере прохождения\n"
+        "4. Просматривайте статистику и помогайте другим планировать поездки\n\n"
+        "⏰ Все время автоматически обрабатывается в UTC\n\n"
+        "Используйте /new чтобы начать отслеживание поездки\n"
+        "Используйте /stats чтобы посмотреть последние данные о границе\n"
+        "Используйте /cancel чтобы отменить текущую поездку"
     )
     await message.answer(welcome_text)
 
@@ -64,7 +73,7 @@ async def cmd_new_journey(message: Message, state: FSMContext):
     active_journey = await db.get_user_active_journey(message.from_user.id)
     if active_journey:
         await message.answer(
-            "⚠️ You already have an active journey. Use /cancel to cancel it first.",
+            "⚠️ У вас уже есть активная поездка. Используйте /cancel чтобы отменить её.",
             reply_markup=ReplyKeyboardRemove()
         )
         return
@@ -75,7 +84,7 @@ async def cmd_new_journey(message: Message, state: FSMContext):
 
     await state.set_state(JourneyStates.choosing_carrier)
     await message.answer(
-        "🚌 Choose your bus carrier:",
+        "🚌 Выберите перевозчика:",
         reply_markup=keyboard
     )
 
@@ -87,39 +96,160 @@ async def process_carrier_choice(message: Message, state: FSMContext):
     carrier = next((c for c in carriers if c["name"] == message.text), None)
 
     if not carrier:
-        await message.answer("❌ Invalid carrier. Please choose from the list.")
+        await message.answer("❌ Неверный перевозчик. Пожалуйста, выберите из списка.")
         return
 
     await state.update_data(carrier_id=carrier["id"], carrier_name=carrier["name"])
     await state.set_state(JourneyStates.entering_departure_date)
 
+    # First, remove the reply keyboard
     await message.answer(
-        "📅 Enter departure date (YYYY-MM-DD):\n"
-        "Example: 2024-11-29",
+        f"✅ Выбран перевозчик: {carrier['name']}",
         reply_markup=ReplyKeyboardRemove()
     )
 
+    # Then show calendar for date selection
+    calendar = create_calendar()
+    await message.answer(
+        "📅 Выберите дату отправления:",
+        reply_markup=calendar
+    )
 
-@router.message(JourneyStates.entering_departure_date)
-async def process_departure_date(message: Message, state: FSMContext):
-    """Process departure date."""
-    try:
-        datetime.strptime(message.text, "%Y-%m-%d")
-        await state.update_data(departure_date=message.text)
+
+# Calendar callback handlers
+@router.callback_query(F.data.startswith("cal_"))
+async def process_calendar_callback(callback: CallbackQuery, state: FSMContext):
+    """Process calendar button callbacks."""
+    current_state = await state.get_state()
+
+    # Only handle calendar in date selection state
+    if current_state != JourneyStates.entering_departure_date:
+        await callback.answer()
+        return
+
+    data = callback.data.split("_")
+    action = data[1]
+
+    if action == "ignore":
+        await callback.answer()
+        return
+
+    elif action == "cancel":
+        await state.clear()
+        await callback.message.edit_text(
+            "❌ Отменено. Используйте /new чтобы начать заново."
+        )
+        await callback.answer()
+        return
+
+    elif action == "prev":
+        year, month = int(data[2]), int(data[3])
+        prev_year, prev_month = get_prev_month(year, month)
+        calendar = create_calendar(prev_year, prev_month)
+        await callback.message.edit_reply_markup(reply_markup=calendar)
+        await callback.answer()
+        return
+
+    elif action == "next":
+        year, month = int(data[2]), int(data[3])
+        next_year, next_month = get_next_month(year, month)
+        calendar = create_calendar(next_year, next_month)
+        await callback.message.edit_reply_markup(reply_markup=calendar)
+        await callback.answer()
+        return
+
+    elif action == "day":
+        year, month, day = int(data[2]), int(data[3]), int(data[4])
+        selected_date = f"{year:04d}-{month:02d}-{day:02d}"
+
+        await state.update_data(departure_date=selected_date)
         await state.set_state(JourneyStates.entering_departure_time)
 
-        await message.answer(
-            "🕐 Enter departure time (HH:MM):\n"
-            "Example: 14:30",
-            reply_markup=ReplyKeyboardRemove()
+        time_keyboard = create_time_keyboard()
+
+        # Edit the calendar message to show selected date and time picker
+        await callback.message.edit_text(
+            f"✅ Дата выбрана: {day:02d}.{month:02d}.{year}\n\n"
+            "🕐 Выберите время отправления:",
+            reply_markup=time_keyboard
         )
-    except ValueError:
-        await message.answer("❌ Invalid date format. Please use YYYY-MM-DD (e.g., 2024-11-29)")
+        await callback.answer()
+
+
+@router.message(JourneyStates.entering_departure_date)
+async def process_departure_date_text(message: Message, state: FSMContext):
+    """Handle text input in date selection state (fallback)."""
+    await message.answer(
+        "⚠️ Пожалуйста, используйте календарь выше для выбора даты."
+    )
+
+
+# Time selection callback handlers
+@router.callback_query(F.data.startswith("time_"))
+async def process_time_callback(callback: CallbackQuery, state: FSMContext):
+    """Process time selection button callbacks."""
+    current_state = await state.get_state()
+
+    if current_state != JourneyStates.entering_departure_time:
+        await callback.answer()
+        return
+
+    time_str = callback.data.replace("time_", "")
+
+    if time_str == "custom":
+        # Switch to manual time entry
+        await callback.message.edit_text(
+            "✏️ Введите время отправления вручную (ЧЧ:ММ):\n"
+            "Пример: 14:30"
+        )
+        await callback.answer()
+        return
+
+    # Process selected time
+    data = await state.get_data()
+
+    # Parse and convert to UTC
+    departure_utc = parse_user_datetime(
+        data["departure_date"],
+        time_str,
+        "Europe/Minsk"  # Default to Belarus timezone
+    )
+
+    # Create journey in database
+    journey = await db.create_journey(
+        user_id=callback.from_user.id,
+        carrier_id=data["carrier_id"],
+        departure_utc=departure_utc
+    )
+
+    await state.update_data(
+        journey_id=journey["id"],
+        departure_time=time_str,
+        current_checkpoint_index=0
+    )
+
+    # Get mandatory checkpoints
+    checkpoints = await db.get_mandatory_checkpoints()
+    await state.update_data(checkpoints=[cp["id"] for cp in checkpoints])
+
+    # Edit message to show journey created
+    await callback.message.edit_text(
+        f"✅ Поездка создана!\n"
+        f"🚌 Перевозчик: {data['carrier_name']}\n"
+        f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
+        f"Теперь отмечайте контрольные точки по мере прохождения.\n"
+        f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
+    )
+
+    await callback.answer()
+
+    # Move to first checkpoint
+    await start_next_checkpoint(callback, state)
 
 
 @router.message(JourneyStates.entering_departure_time)
 async def process_departure_time(message: Message, state: FSMContext):
-    """Process departure time and create journey."""
+    """Process departure time (manual text input)."""
     try:
         datetime.strptime(message.text, "%H:%M")
         data = await state.get_data()
@@ -149,22 +279,21 @@ async def process_departure_time(message: Message, state: FSMContext):
         await state.update_data(checkpoints=[cp["id"] for cp in checkpoints])
 
         await message.answer(
-            f"✅ Journey created!\n"
-            f"🚌 Carrier: {data['carrier_name']}\n"
-            f"📅 Departure: {data['departure_date']} {message.text}\n\n"
-            f"Now, let's record checkpoint timestamps as you pass them.\n"
-            f"Press '⏰ Now' to use current time, or enter time manually (HH:MM).",
-            reply_markup=ReplyKeyboardRemove()
+            f"✅ Поездка создана!\n"
+            f"🚌 Перевозчик: {data['carrier_name']}\n"
+            f"📅 Отправление: {data['departure_date']} {message.text}\n\n"
+            f"Теперь отмечайте контрольные точки по мере прохождения.\n"
+            f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
         )
 
         # Move to first checkpoint
         await start_next_checkpoint(message, state)
 
     except ValueError:
-        await message.answer("❌ Invalid time format. Please use HH:MM (e.g., 14:30)")
+        await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30)")
 
 
-async def start_next_checkpoint(message: Message, state: FSMContext):
+async def start_next_checkpoint(message_or_callback, state: FSMContext):
     """Start recording next checkpoint."""
     data = await state.get_data()
     checkpoint_index = data["current_checkpoint_index"]
@@ -172,7 +301,7 @@ async def start_next_checkpoint(message: Message, state: FSMContext):
 
     if checkpoint_index >= len(checkpoints):
         # All mandatory checkpoints done
-        await show_journey_summary(message, state)
+        await show_journey_summary(message_or_callback, state)
         return
 
     checkpoint = checkpoints[checkpoint_index]
@@ -193,11 +322,21 @@ async def start_next_checkpoint(message: Message, state: FSMContext):
     await state.update_data(current_checkpoint_id=checkpoint["id"])
 
     keyboard = create_now_skip_keyboard(show_skip=False)
-    await message.answer(
-        f"📍 Checkpoint {checkpoint_index + 1}/7\n{checkpoint_name}\n\n"
-        f"Enter time (HH:MM) or press '⏰ Now':",
-        reply_markup=keyboard
-    )
+
+    # Handle both Message and CallbackQuery
+    if isinstance(message_or_callback, Message):
+        await message_or_callback.answer(
+            f"📍 Контрольная точка {checkpoint_index + 1}/7\n{checkpoint_name}\n\n"
+            f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+            reply_markup=keyboard
+        )
+    else:  # CallbackQuery
+        await message_or_callback.bot.send_message(
+            message_or_callback.message.chat.id,
+            f"📍 Контрольная точка {checkpoint_index + 1}/7\n{checkpoint_name}\n\n"
+            f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+            reply_markup=keyboard
+        )
 
 
 @router.message(StateFilter(
@@ -214,7 +353,7 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
     data = await state.get_data()
 
     # Determine timestamp
-    if message.text == "⏰ Now":
+    if message.text == "⏰ Сейчас":
         timestamp_utc = now_utc()
     else:
         try:
@@ -225,7 +364,7 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
                 "Europe/Minsk"
             )
         except ValueError:
-            await message.answer("❌ Invalid time format. Please use HH:MM or press '⏰ Now'")
+            await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ или нажмите '⏰ Сейчас'")
             return
 
     # Validate timestamp order
@@ -234,8 +373,8 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
         last_event_time = datetime.fromisoformat(journey_events[-1]["timestamp_utc"].replace("Z", "+00:00"))
         if not validate_checkpoint_order(timestamp_utc, last_event_time):
             await message.answer(
-                "❌ Invalid time: must be after previous checkpoint.\n"
-                "Please enter a valid time."
+                "❌ Неверное время: должно быть после предыдущей контрольной точки.\n"
+                "Пожалуйста, введите корректное время."
             )
             return
 
@@ -252,7 +391,7 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
     await start_next_checkpoint(message, state)
 
 
-async def show_journey_summary(message: Message, state: FSMContext):
+async def show_journey_summary(message_or_callback, state: FSMContext):
     """Show journey summary and complete it."""
     data = await state.get_data()
     journey_id = data["journey_id"]
@@ -261,7 +400,7 @@ async def show_journey_summary(message: Message, state: FSMContext):
     events = await db.get_journey_events(journey_id)
 
     # Calculate durations
-    summary_text = "✅ Journey completed!\n\n📊 Summary:\n\n"
+    summary_text = "✅ Поездка завершена!\n\n📊 Итоги:\n\n"
 
     for i, event in enumerate(events):
         checkpoint_name = CHECKPOINT_NAMES.get(
@@ -278,7 +417,7 @@ async def show_journey_summary(message: Message, state: FSMContext):
             curr_time = datetime.fromisoformat(event["timestamp_utc"].replace("Z", "+00:00"))
             duration = curr_time - prev_time
             minutes = int(duration.total_seconds() / 60)
-            summary_text += f"   ⌛ +{minutes} min from previous\n"
+            summary_text += f"   ⌛ +{minutes} мин от предыдущей\n"
         summary_text += "\n"
 
     # Calculate total duration
@@ -287,18 +426,31 @@ async def show_journey_summary(message: Message, state: FSMContext):
         end_time = datetime.fromisoformat(events[-1]["timestamp_utc"].replace("Z", "+00:00"))
         total_duration = end_time - start_time
         total_minutes = int(total_duration.total_seconds() / 60)
-        summary_text += f"🏁 Total border crossing time: {total_minutes} minutes\n"
+        summary_text += f"🏁 Общее время прохождения границы: {total_minutes} минут\n"
 
     # Complete journey
     await db.complete_journey(journey_id)
 
-    await message.answer(summary_text, reply_markup=ReplyKeyboardRemove())
-    await message.answer(
-        "Thank you for contributing! 🙏\n\n"
-        "Your data helps others plan their trips.\n\n"
-        "Use /new to track another journey\n"
-        "Use /stats to see latest statistics"
+    thank_you_text = (
+        "Спасибо за вклад! 🙏\n\n"
+        "Ваши данные помогают другим планировать поездки.\n\n"
+        "Используйте /new чтобы отследить следующую поездку\n"
+        "Используйте /stats чтобы посмотреть статистику"
     )
+
+    # Handle both Message and CallbackQuery
+    if isinstance(message_or_callback, Message):
+        await message_or_callback.answer(summary_text, reply_markup=ReplyKeyboardRemove())
+        await message_or_callback.answer(thank_you_text)
+    else:  # CallbackQuery
+        await message_or_callback.bot.send_message(
+            message_or_callback.message.chat.id,
+            summary_text
+        )
+        await message_or_callback.bot.send_message(
+            message_or_callback.message.chat.id,
+            thank_you_text
+        )
 
     await state.clear()
 
@@ -308,12 +460,12 @@ async def cmd_cancel(message: Message, state: FSMContext):
     """Cancel current journey."""
     current_state = await state.get_state()
     if current_state is None:
-        await message.answer("No active journey to cancel.")
+        await message.answer("Нет активной поездки для отмены.")
         return
 
     await state.clear()
     await message.answer(
-        "❌ Journey cancelled.\n\nUse /new to start a new journey.",
+        "❌ Поездка отменена.\n\nИспользуйте /new чтобы начать новую поездку.",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -324,13 +476,13 @@ async def cmd_stats(message: Message):
     journeys = await db.get_latest_border_stats(limit=5)
 
     if not journeys:
-        await message.answer("📊 No data available yet. Be the first to contribute!")
+        await message.answer("📊 Данных пока нет. Будьте первым, кто внесёт свой вклад!")
         return
 
-    stats_text = "📊 Latest border crossings:\n\n"
+    stats_text = "📊 Последние пересечения границы:\n\n"
 
     for journey in journeys:
-        carrier_name = journey.get("carriers", {}).get("name", "Unknown")
+        carrier_name = journey.get("carriers", {}).get("name", "Неизвестно")
         events = journey.get("journey_events", [])
 
         if len(events) >= 2:
@@ -342,7 +494,7 @@ async def cmd_stats(message: Message):
             date_str = start_time.strftime("%Y-%m-%d %H:%M")
             stats_text += f"🚌 {carrier_name}\n"
             stats_text += f"📅 {date_str}\n"
-            stats_text += f"⌛ {minutes} minutes\n\n"
+            stats_text += f"⌛ {minutes} минут\n\n"
 
     await message.answer(stats_text)
 

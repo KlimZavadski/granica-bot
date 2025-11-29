@@ -1,5 +1,7 @@
 # GranicaBot — Engineering Rules for Cursor
 
+All text visible for user must be in Russian.
+
 ## Architecture
 - The codebase is organized into layers:
   - `bot/` — FSM, handlers, routers.
