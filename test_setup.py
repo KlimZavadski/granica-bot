@@ -135,7 +135,7 @@ def main():
     print()
     if all_passed:
         print("🎉 All tests passed! You're ready to run the bot.")
-        print("\nStart the bot with: python bot.py")
+        print("\nStart the bot with: python3 bot.py")
         return 0
     else:
         print("❌ Some tests failed. Please fix the issues above.")

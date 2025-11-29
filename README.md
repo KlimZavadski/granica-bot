@@ -71,7 +71,7 @@ This will create:
 ### 5. Run the Bot
 
 ```bash
-python bot.py
+python3 bot.py
 ```
 
 ## Usage
@@ -165,7 +165,7 @@ INSERT INTO carriers (name) VALUES ('New Carrier Name');
 
 ### Bot doesn't respond
 - Check if bot token is correct
-- Verify bot is running (`python bot.py`)
+- Verify bot is running (`python3 bot.py`)
 - Check logs for errors
 
 ### Database connection issues

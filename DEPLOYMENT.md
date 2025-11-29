@@ -89,7 +89,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/granica-bot
 Environment="PATH=/opt/granica-bot/venv/bin"
-ExecStart=/opt/granica-bot/venv/bin/python /opt/granica-bot/bot.py
+ExecStart=/opt/granica-bot/venv/bin/python3 /opt/granica-bot/bot.py
 Restart=always
 RestartSec=10
 
@@ -131,7 +131,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "bot.py"]
+CMD ["python3", "bot.py"]
 ```
 
 2. **Create docker-compose.yml**

@@ -76,7 +76,7 @@ You should see:
 ## Step 5: Test Setup
 
 ```bash
-python test_setup.py
+python3 test_setup.py
 ```
 
 Expected output:
@@ -97,7 +97,7 @@ Expected output:
 ## Step 6: Run the Bot
 
 ```bash
-python bot.py
+python3 bot.py
 ```
 
 You should see:
@@ -142,7 +142,7 @@ pip install -r requirements.txt
 - Check for errors in the SQL execution
 
 ### Bot doesn't respond
-- Make sure bot is running (`python bot.py`)
+- Make sure bot is running (`python3 bot.py`)
 - Check terminal for error messages
 - Try `/start` command again
 
@@ -163,10 +163,10 @@ Once working:
 
 ```bash
 # Start bot
-python bot.py
+python3 bot.py
 
 # Run tests
-python test_setup.py
+python3 test_setup.py
 
 # Update dependencies
 pip install --upgrade -r requirements.txt
