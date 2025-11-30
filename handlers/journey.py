@@ -803,7 +803,8 @@ async def cmd_stats(message: Message, state: FSMContext):
         )
         return
 
-    stats_text = "📊 Последние пересечения границы:\n\n"
+    stats_text = "📊 Последние пересечения границы:\n"
+    stats_text += "🌍 Время указано в таймзоне Минска (UTC+3)\n\n"
 
     for journey in journeys:
         carrier_name = journey.get("carriers", {}).get("name", "Неизвестно")
@@ -824,7 +825,8 @@ async def cmd_stats(message: Message, state: FSMContext):
             else:
                 time_str = f"{minutes} мин"
 
-            date_str = start_time.strftime("%Y-%m-%d %H:%M")
+            # Convert to Minsk timezone for display
+            date_str = format_datetime_for_user(end_time, "Europe/Minsk")
             stats_text += f"🚌 {carrier_name}\n"
             stats_text += f"📅 {date_str}\n"
             stats_text += f"⌛ {time_str}\n\n"
