@@ -76,33 +76,27 @@ fi
 
 if [ ! -z "$DB_URL" ]; then
     echo ""
-    read -p "Run migration now? (yes/no): " confirm
-    if [ "$confirm" = "yes" ]; then
+    echo "🔄 Running migration..."
+
+    # Check if psql is installed
+    if ! command -v psql &> /dev/null; then
+        echo "❌ Error: psql is not installed"
         echo ""
-        echo "🔄 Running migration..."
+        echo "Install with:"
+        echo "  brew install libpq"
+        echo "  brew link --force libpq"
+        exit 1
+    fi
 
-        # Check if psql is installed
-        if ! command -v psql &> /dev/null; then
-            echo "❌ Error: psql is not installed"
-            echo ""
-            echo "Install with:"
-            echo "  brew install libpq"
-            echo "  brew link --force libpq"
-            exit 1
-        fi
+    psql "$DB_URL" -f "$MIGRATION_FILE"
 
-        psql "$DB_URL" -f "$MIGRATION_FILE"
-
-        if [ $? -eq 0 ]; then
-            echo ""
-            echo "✅ Migration completed successfully!"
-        else
-            echo ""
-            echo "❌ Migration failed!"
-            exit 1
-        fi
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅ Migration completed successfully!"
     else
-        echo "❌ Cancelled"
+        echo ""
+        echo "❌ Migration failed!"
+        exit 1
     fi
 else
     echo "💡 Tip: Set SUPABASE_DIRECT_URL or SUPABASE_DB_URL in .env for automatic execution"
