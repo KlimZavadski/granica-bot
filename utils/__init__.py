@@ -18,6 +18,7 @@ from .time_keyboard import create_time_keyboard
 from .keyboards import (
     create_main_menu_keyboard,
     create_cancel_confirmation_keyboard,
+    create_timezone_keyboard,
     create_checkpoint_keyboard
 )
 
@@ -36,6 +37,7 @@ __all__ = [
     "create_time_keyboard",
     "create_main_menu_keyboard",
     "create_cancel_confirmation_keyboard",
+    "create_timezone_keyboard",
     "create_checkpoint_keyboard"
 ]
 

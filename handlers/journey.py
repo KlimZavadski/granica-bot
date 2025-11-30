@@ -21,6 +21,7 @@ from utils import (
     create_time_keyboard,
     create_main_menu_keyboard,
     create_cancel_confirmation_keyboard,
+    create_timezone_keyboard,
     create_checkpoint_keyboard
 )
 
@@ -37,6 +38,25 @@ CHECKPOINT_NAMES = {
     "passed_passport_control_2": "✅ Прошли паспортный контроль #2",   # New name
     "leaving_checkpoint_2": "🏁 Покидаем границу"
 }
+
+# Timezone mapping
+TIMEZONE_MAP = {
+    "🇧🇾 Минск (UTC+3)": "Europe/Minsk",
+    "🇵🇱 Варшава (UTC+1)": "Europe/Warsaw",
+    "🇱🇹 Вильнюс (UTC+2)": "Europe/Vilnius"
+}
+
+# Reverse mapping for display
+TIMEZONE_DISPLAY = {
+    "Europe/Minsk": "🇧🇾 Минск (UTC+3)",
+    "Europe/Warsaw": "🇵🇱 Варшава (UTC+1)",
+    "Europe/Vilnius": "🇱🇹 Вильнюс (UTC+2)"
+}
+
+
+def get_timezone_display(timezone: str) -> str:
+    """Get display name for timezone."""
+    return TIMEZONE_DISPLAY.get(timezone, timezone)
 
 
 def create_carrier_keyboard(carriers: List[Dict[str, Any]]) -> ReplyKeyboardMarkup:
@@ -288,14 +308,21 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     checkpoints = await db.get_mandatory_checkpoints()
     await state.update_data(checkpoints=[cp["id"] for cp in checkpoints])
 
-    # Edit message to show journey created
+    # Ask for timezone
+    await state.set_state(JourneyStates.choosing_initial_timezone)
+    keyboard = create_timezone_keyboard(include_cancel=True)
+
     try:
         await callback.message.edit_text(
             f"✅ Поездка создана!\n"
             f"🚌 Перевозчик: {data['carrier_name']}\n"
             f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
-            f"Теперь отмечайте контрольные точки по мере прохождения.\n"
-            f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
+            f"🌍 Выберите вашу текущую таймзону:\n"
+            f"(Вы сможете изменить её в любой момент)"
+        )
+        await callback.message.answer(
+            "Выберите таймзону:",
+            reply_markup=keyboard
         )
     except Exception as e:
         print(f"Error editing message: {e}")
@@ -305,12 +332,10 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
             f"✅ Поездка создана!\n"
             f"🚌 Перевозчик: {data['carrier_name']}\n"
             f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
-            f"Теперь отмечайте контрольные точки по мере прохождения.\n"
-            f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
+            f"🌍 Выберите вашу текущую таймзону:\n"
+            f"(Вы сможете изменить её в любой момент)",
+            reply_markup=keyboard
         )
-
-    # Move to first checkpoint
-    await start_next_checkpoint(callback, state)
 
 
 @router.message(JourneyStates.entering_departure_time)
@@ -344,16 +369,18 @@ async def process_departure_time(message: Message, state: FSMContext):
         checkpoints = await db.get_mandatory_checkpoints()
         await state.update_data(checkpoints=[cp["id"] for cp in checkpoints])
 
+        # Ask for timezone
+        await state.set_state(JourneyStates.choosing_initial_timezone)
+        keyboard = create_timezone_keyboard(include_cancel=True)
+
         await message.answer(
             f"✅ Поездка создана!\n"
             f"🚌 Перевозчик: {data['carrier_name']}\n"
             f"📅 Отправление: {data['departure_date']} {message.text}\n\n"
-            f"Теперь отмечайте контрольные точки по мере прохождения.\n"
-            f"Нажмите '⏰ Сейчас' чтобы использовать текущее время, или введите время вручную (ЧЧ:ММ)."
+            f"🌍 Выберите вашу текущую таймзону:\n"
+            f"(Вы сможете изменить её в любой момент)",
+            reply_markup=keyboard
         )
-
-        # Move to first checkpoint
-        await start_next_checkpoint(message, state)
 
     except ValueError:
         await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30)")
@@ -388,20 +415,134 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
 
     keyboard = create_checkpoint_keyboard()
 
+    # Get current timezone to display
+    current_tz = data.get("user_timezone", "Europe/Minsk")
+    tz_display = get_timezone_display(current_tz)
+
     # Handle both Message and CallbackQuery
     if isinstance(message_or_callback, Message):
         await message_or_callback.answer(
             f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
-            f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+            f"🌍 Таймзона: {tz_display}\n"
+            f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
             reply_markup=keyboard
         )
     else:  # CallbackQuery
         await message_or_callback.bot.send_message(
             message_or_callback.message.chat.id,
             f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
-            f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+            f"🌍 Таймзона: {tz_display}\n"
+            f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
             reply_markup=keyboard
         )
+
+
+@router.message(JourneyStates.choosing_initial_timezone)
+async def process_initial_timezone_selection(message: Message, state: FSMContext):
+    """Process initial timezone selection after journey creation."""
+    # Check if valid timezone selected
+    if message.text in TIMEZONE_MAP:
+        selected_tz = TIMEZONE_MAP[message.text]
+
+        # Save timezone
+        await state.update_data(user_timezone=selected_tz)
+
+        await message.answer(
+            f"✅ Таймзона установлена: {message.text}\n\n"
+            f"Теперь отмечайте контрольные точки по мере прохождения."
+        )
+
+        # Move to first checkpoint
+        await start_next_checkpoint(message, state)
+    else:
+        await message.answer(
+            "❌ Пожалуйста, выберите таймзону из предложенных вариантов."
+        )
+
+
+@router.message(JourneyStates.changing_timezone)
+async def process_timezone_change(message: Message, state: FSMContext):
+    """Process timezone change during active journey."""
+    data = await state.get_data()
+
+    # Check if valid timezone selected
+    if message.text in TIMEZONE_MAP:
+        selected_tz = TIMEZONE_MAP[message.text]
+
+        # Save new timezone
+        await state.update_data(user_timezone=selected_tz)
+
+        # Return to previous checkpoint state
+        checkpoint_index = data.get("current_checkpoint_index", 0)
+        checkpoints = await db.get_mandatory_checkpoints()
+
+        if checkpoint_index >= len(checkpoints):
+            # Journey already completed
+            keyboard = create_main_menu_keyboard(has_active_journey=False)
+            await message.answer(
+                f"✅ Таймзона изменена: {message.text}",
+                reply_markup=keyboard
+            )
+            return
+
+        # Map checkpoint to state
+        state_mapping = {
+            0: JourneyStates.checkpoint_approaching_border,
+            1: JourneyStates.checkpoint_entering_1,
+            2: JourneyStates.checkpoint_passport_1,
+            3: JourneyStates.checkpoint_entering_2,
+            4: JourneyStates.checkpoint_passport_2,
+            5: JourneyStates.checkpoint_leaving_2,
+        }
+
+        await state.set_state(state_mapping[checkpoint_index])
+
+        checkpoint = checkpoints[checkpoint_index]
+        checkpoint_name = CHECKPOINT_NAMES.get(checkpoint["name"], checkpoint["name"])
+        keyboard = create_checkpoint_keyboard()
+
+        await message.answer(
+            f"✅ Таймзона изменена: {message.text}\n\n"
+            f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
+            f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+            reply_markup=keyboard
+        )
+    else:
+        await message.answer(
+            "❌ Пожалуйста, выберите таймзону из предложенных вариантов."
+        )
+
+
+@router.message(F.text == "🌍 Сменить таймзону")
+async def cmd_change_timezone(message: Message, state: FSMContext):
+    """Handle timezone change request."""
+    current_state = await state.get_state()
+
+    # Check if user has active journey
+    active_journey = await db.get_user_active_journey(message.from_user.id)
+
+    if current_state is None or active_journey is None:
+        keyboard = create_main_menu_keyboard(has_active_journey=False)
+        await message.answer(
+            "У вас нет активной поездки.\n\n"
+            "Используйте '🆕 Новая поездка' чтобы начать отслеживание.",
+            reply_markup=keyboard
+        )
+        return
+
+    # Show timezone selection
+    await state.set_state(JourneyStates.changing_timezone)
+    keyboard = create_timezone_keyboard(include_cancel=False)
+
+    data = await state.get_data()
+    current_tz = data.get("user_timezone", "Europe/Minsk")
+    tz_display = get_timezone_display(current_tz)
+
+    await message.answer(
+        f"🌍 Текущая таймзона: {tz_display}\n\n"
+        f"Выберите новую таймзону:",
+        reply_markup=keyboard
+    )
 
 
 @router.message(StateFilter(
@@ -416,30 +557,34 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
     """Process checkpoint timestamp."""
     data = await state.get_data()
 
-    # Determine timestamp
-    if message.text == "⏰ Сейчас":
-        timestamp_utc = now_utc()
-    else:
-        try:
-            # Get journey to determine reference time
-            journey = await db.get_journey(data["journey_id"])
-            journey_events = await db.get_journey_events(data["journey_id"])
+    # Check for timezone change request
+    if message.text == "🌍 Сменить таймзону":
+        await cmd_change_timezone(message, state)
+        return
 
-            # Reference time is last checkpoint or departure
-            if journey_events:
-                reference_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
-            else:
-                reference_time = parse_db_timestamp(journey["departure_utc"])
+    # Get timezone selected by user
+    user_timezone = data.get("user_timezone", "Europe/Minsk")
 
-            # Parse checkpoint time intelligently (auto-detects next day)
-            timestamp_utc = parse_checkpoint_time(
-                message.text,
-                reference_time,
-                "Europe/Minsk"
-            )
-        except ValueError:
-            await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ или нажмите '⏰ Сейчас'")
-            return
+    try:
+        # Get journey to determine reference time
+        journey = await db.get_journey(data["journey_id"])
+        journey_events = await db.get_journey_events(data["journey_id"])
+
+        # Reference time is last checkpoint or departure
+        if journey_events:
+            reference_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
+        else:
+            reference_time = parse_db_timestamp(journey["departure_utc"])
+
+        # Parse checkpoint time intelligently (auto-detects next day)
+        timestamp_utc = parse_checkpoint_time(
+            message.text,
+            reference_time,
+            user_timezone
+        )
+    except ValueError:
+        await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30)")
+        return
 
     # Validate timestamp order and max duration
     journey_events = await db.get_journey_events(data["journey_id"])
@@ -720,11 +865,16 @@ async def cmd_enter_time(message: Message, state: FSMContext):
     checkpoint = checkpoints[checkpoint_index]
     checkpoint_name = CHECKPOINT_NAMES.get(checkpoint["name"], checkpoint["name"])
 
+    # Get current timezone
+    current_tz = data.get("user_timezone", "Europe/Minsk")
+    tz_display = get_timezone_display(current_tz)
+
     keyboard = create_checkpoint_keyboard()
     await message.answer(
-        f"📍 Контрольная точка {checkpoint_index + 1}/7\n"
+        f"📍 Контрольная точка {checkpoint_index + 1}/6\n"
         f"{checkpoint_name}\n\n"
-        f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+        f"🌍 Таймзона: {tz_display}\n"
+        f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
         reply_markup=keyboard
     )
 

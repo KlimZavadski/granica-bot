@@ -6,8 +6,9 @@ Telegram bot for tracking border crossing times between Belarus and Poland/Lithu
 
 - ✅ Track border crossing journeys with multiple checkpoints
 - ✅ Support for multiple bus carriers (FlixBus, Ecolines, Lux Express, etc.)
-- ✅ Automatic UTC timezone handling
-- ✅ Sequential checkpoint validation
+- ✅ Smart timezone handling with user selection (🇧🇾 Minsk, 🇵🇱 Warsaw, 🇱🇹 Vilnius)
+- ✅ Automatic next-day detection for checkpoint times
+- ✅ Sequential checkpoint validation (max 24h between checkpoints)
 - ✅ Journey summaries with duration calculations
 - ✅ Statistics on recent border crossings
 
@@ -188,8 +189,10 @@ INSERT INTO carriers (name) VALUES ('New Carrier Name');
 - Ensure network access to Supabase
 
 ### Timezone issues
-- All times should be in UTC internally
-- User input is converted from Europe/Minsk by default
+- All times are stored in UTC internally
+- Users select their timezone for each checkpoint (🇧🇾 Minsk, 🇵🇱 Warsaw, 🇱🇹 Vilnius)
+- The bot remembers the last selected timezone
+- "⏰ Сейчас" button uses server UTC time automatically
 - Check `utils/timezone.py` for conversion logic
 
 ## License

@@ -9,6 +9,10 @@ class JourneyStates(StatesGroup):
     choosing_carrier = State()
     entering_departure_date = State()
     entering_departure_time = State()
+    choosing_initial_timezone = State()
+
+    # Timezone management
+    changing_timezone = State()
 
     # Mandatory checkpoints (in order)
     checkpoint_approaching_border = State()
