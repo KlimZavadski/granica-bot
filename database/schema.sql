@@ -64,10 +64,9 @@ CREATE INDEX IF NOT EXISTS idx_routes_carrier ON routes(carrier_id);
 INSERT INTO checkpoints (name, type, order_index, required) VALUES
     ('approaching_border', 'mandatory', 1, true),
     ('entering_checkpoint_1', 'mandatory', 2, true),
-    ('invited_passport_control_1', 'mandatory', 3, true),
-    ('leaving_checkpoint_1', 'mandatory', 4, true),
+    ('passed_passport_control_1', 'mandatory', 3, true),
     ('entering_checkpoint_2', 'mandatory', 5, true),
-    ('invited_passport_control_2', 'mandatory', 6, true),
+    ('passed_passport_control_2', 'mandatory', 6, true),
     ('leaving_checkpoint_2', 'mandatory', 7, true)
 ON CONFLICT (name, order_index) DO NOTHING;
 

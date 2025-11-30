@@ -1,6 +1,7 @@
 # GranicaBot — Engineering Rules for Cursor
 
 All text visible for user must be in Russian.
+Run migration scripts via `scripts/run_migration.sh <migration_file>`.
 
 ## Architecture
 - The codebase is organized into layers:

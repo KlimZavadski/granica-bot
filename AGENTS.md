@@ -20,6 +20,7 @@ Each agent is designed to operate deterministically, idempotently, and in full U
 All agents must follow these core rules:
 
 All text visible for user must be in Russian.
+Run migration scripts via `scripts/run_migration.sh <migration_file>`.
 
 1. **Deterministic state transitions**
 

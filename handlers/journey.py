@@ -29,11 +29,12 @@ router = Router()
 CHECKPOINT_NAMES = {
     "approaching_border": "🚌 Подъехали к шлагбауму",
     "entering_checkpoint_1": "🛂 Въезд на КПП #1",
-    "invited_passport_control_1": "👮 Приглашены на паспортный контроль #1",
-    "leaving_checkpoint_1": "🚪 Покидаем КПП #1 (нейтральная зона)",
+    "invited_passport_control_1": "✅ Прошли паспортный контроль #1",  # Legacy name
+    "passed_passport_control_1": "✅ Прошли паспортный контроль #1",   # New name
     "entering_checkpoint_2": "🛂 Въезд на КПП #2",
-    "invited_passport_control_2": "👮 Приглашены на паспортный контроль #2",
-    "leaving_checkpoint_2": "✅ Покидаем КПП #2 (выезд с границы)"
+    "invited_passport_control_2": "✅ Прошли паспортный контроль #2",  # Legacy name
+    "passed_passport_control_2": "✅ Прошли паспортный контроль #2",   # New name
+    "leaving_checkpoint_2": "🏁 Покидаем границу"
 }
 
 
@@ -376,10 +377,9 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
         0: JourneyStates.checkpoint_approaching_border,
         1: JourneyStates.checkpoint_entering_1,
         2: JourneyStates.checkpoint_passport_1,
-        3: JourneyStates.checkpoint_leaving_1,
-        4: JourneyStates.checkpoint_entering_2,
-        5: JourneyStates.checkpoint_passport_2,
-        6: JourneyStates.checkpoint_leaving_2,
+        3: JourneyStates.checkpoint_entering_2,
+        4: JourneyStates.checkpoint_passport_2,
+        5: JourneyStates.checkpoint_leaving_2,
     }
 
     await state.set_state(state_mapping[checkpoint_index])
@@ -390,14 +390,14 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
     # Handle both Message and CallbackQuery
     if isinstance(message_or_callback, Message):
         await message_or_callback.answer(
-            f"📍 Контрольная точка {checkpoint_index + 1}/7\n{checkpoint_name}\n\n"
+            f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
             f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
             reply_markup=keyboard
         )
     else:  # CallbackQuery
         await message_or_callback.bot.send_message(
             message_or_callback.message.chat.id,
-            f"📍 Контрольная точка {checkpoint_index + 1}/7\n{checkpoint_name}\n\n"
+            f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
             f"Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
             reply_markup=keyboard
         )
@@ -407,7 +407,6 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
     JourneyStates.checkpoint_approaching_border,
     JourneyStates.checkpoint_entering_1,
     JourneyStates.checkpoint_passport_1,
-    JourneyStates.checkpoint_leaving_1,
     JourneyStates.checkpoint_entering_2,
     JourneyStates.checkpoint_passport_2,
     JourneyStates.checkpoint_leaving_2

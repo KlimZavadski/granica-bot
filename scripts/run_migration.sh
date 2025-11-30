@@ -63,18 +63,48 @@ echo "2. Paste in SQL Editor"
 echo "3. Click Run"
 echo ""
 
-# Optionally try to run if SUPABASE_DB_URL is set
-if [ ! -z "$SUPABASE_DB_URL" ]; then
-    echo "Found SUPABASE_DB_URL in environment"
+# Try to run if SUPABASE_DIRECT_URL or SUPABASE_DB_URL is set
+DB_URL=""
+
+if [ ! -z "$SUPABASE_DIRECT_URL" ]; then
+    DB_URL="$SUPABASE_DIRECT_URL"
+    echo "✅ Found SUPABASE_DIRECT_URL in environment"
+elif [ ! -z "$SUPABASE_DB_URL" ]; then
+    DB_URL="$SUPABASE_DB_URL"
+    echo "✅ Found SUPABASE_DB_URL in environment"
+fi
+
+if [ ! -z "$DB_URL" ]; then
+    echo ""
     read -p "Run migration now? (yes/no): " confirm
     if [ "$confirm" = "yes" ]; then
         echo ""
         echo "🔄 Running migration..."
-        psql "$SUPABASE_DB_URL" -f "$MIGRATION_FILE"
-        echo ""
-        echo "✅ Migration completed!"
+
+        # Check if psql is installed
+        if ! command -v psql &> /dev/null; then
+            echo "❌ Error: psql is not installed"
+            echo ""
+            echo "Install with:"
+            echo "  brew install libpq"
+            echo "  brew link --force libpq"
+            exit 1
+        fi
+
+        psql "$DB_URL" -f "$MIGRATION_FILE"
+
+        if [ $? -eq 0 ]; then
+            echo ""
+            echo "✅ Migration completed successfully!"
+        else
+            echo ""
+            echo "❌ Migration failed!"
+            exit 1
+        fi
+    else
+        echo "❌ Cancelled"
     fi
 else
-    echo "💡 Tip: Set SUPABASE_DB_URL in .env for automatic execution"
+    echo "💡 Tip: Set SUPABASE_DIRECT_URL or SUPABASE_DB_URL in .env for automatic execution"
 fi
 

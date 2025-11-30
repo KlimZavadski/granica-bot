@@ -34,6 +34,32 @@ psql "YOUR_CONNECTION_STRING" -f database/migrations/001_add_cancelled_field.sql
 
 ---
 
+### 002_rename_passport_checkpoints.sql
+
+**Дата:** 2024-11-29
+**Описание:** Переименовывает чекпоинты паспортного контроля с "invited" на "passed" для более точного отражения момента записи времени
+
+**Изменения:**
+- `invited_passport_control_1` → `passed_passport_control_1`
+- `invited_passport_control_2` → `passed_passport_control_2`
+
+**Обратная совместимость:** ✅ Да (код поддерживает оба названия)
+
+---
+
+### 003_remove_leaving_checkpoint_1.sql
+
+**Дата:** 2024-11-30
+**Описание:** Убирает промежуточный чекпоинт `leaving_checkpoint_1` из обязательных, упрощая процесс отслеживания
+
+**Изменения:**
+- `leaving_checkpoint_1` помечен как optional (не обязательный)
+- Сокращение с 7 до 6 обязательных чекпоинтов
+
+**Обратная совместимость:** ✅ Да (старые данные остаются валидными)
+
+---
+
 ## Проверка применения миграции
 
 ```sql
