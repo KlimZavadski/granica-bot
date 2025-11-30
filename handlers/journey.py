@@ -803,8 +803,7 @@ async def cmd_stats(message: Message, state: FSMContext):
         )
         return
 
-    stats_text = "📊 Последние пересечения границы:\n"
-    stats_text += "🌍 Время указано в таймзоне Минска (UTC+3)\n\n"
+    stats_text = "📊 Последние пересечения границы:\n\n"
 
     for journey in journeys:
         carrier_name = journey.get("carriers", {}).get("name", "Неизвестно")

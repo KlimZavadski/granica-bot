@@ -54,7 +54,17 @@ def format_datetime_for_user(dt: datetime, tz_name: str = "Europe/Minsk") -> str
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     local_dt = from_utc_to_timezone(dt, tz_name)
-    return local_dt.strftime("%Y-%m-%d %H:%M %Z")
+
+    # Calculate UTC offset
+    offset = local_dt.utcoffset()
+    if offset is not None:
+        total_seconds = int(offset.total_seconds())
+        hours = total_seconds // 3600
+        utc_offset = f"UTC{hours:+d}"
+    else:
+        utc_offset = "UTC"
+
+    return local_dt.strftime(f"%Y-%m-%d %H:%M ({utc_offset})")
 
 
 def parse_db_timestamp(timestamp_value) -> datetime:
