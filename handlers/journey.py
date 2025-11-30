@@ -490,7 +490,17 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
         end_time = parse_db_timestamp(events[-1]["timestamp_utc"])
         total_duration = end_time - start_time
         total_minutes = int(total_duration.total_seconds() / 60)
-        summary_text += f"🏁 Общее время прохождения границы: {total_minutes} минут\n"
+
+        # Format time nicely with hours and minutes
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+
+        if hours > 0:
+            time_str = f"{hours} ч {minutes} мин ({total_minutes} мин)"
+        else:
+            time_str = f"{total_minutes} мин"
+
+        summary_text += f"🏁 Общее время прохождения границы: {time_str}\n"
 
     # Complete journey
     await db.complete_journey(journey_id)
@@ -625,10 +635,19 @@ async def cmd_stats(message: Message, state: FSMContext):
             duration = end_time - start_time
             minutes = int(duration.total_seconds() / 60)
 
+            # Format time nicely with hours and minutes
+            hours = minutes // 60
+            mins = minutes % 60
+
+            if hours > 0:
+                time_str = f"{hours} ч {mins} мин"
+            else:
+                time_str = f"{minutes} мин"
+
             date_str = start_time.strftime("%Y-%m-%d %H:%M")
             stats_text += f"🚌 {carrier_name}\n"
             stats_text += f"📅 {date_str}\n"
-            stats_text += f"⌛ {minutes} минут\n\n"
+            stats_text += f"⌛ {time_str}\n\n"
 
     await message.answer(stats_text, reply_markup=keyboard)
 
