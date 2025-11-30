@@ -4,6 +4,7 @@ from .timezone import (
     from_utc_to_timezone,
     now_utc,
     parse_user_datetime,
+    parse_checkpoint_time,
     format_datetime_for_user,
     validate_checkpoint_order,
     parse_db_timestamp
@@ -25,6 +26,7 @@ __all__ = [
     "from_utc_to_timezone",
     "now_utc",
     "parse_user_datetime",
+    "parse_checkpoint_time",
     "format_datetime_for_user",
     "validate_checkpoint_order",
     "parse_db_timestamp",

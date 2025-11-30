@@ -11,6 +11,7 @@ from database import db
 from utils import (
     now_utc,
     parse_user_datetime,
+    parse_checkpoint_time,
     format_datetime_for_user,
     validate_checkpoint_order,
     parse_db_timestamp,
@@ -420,26 +421,60 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
         timestamp_utc = now_utc()
     else:
         try:
-            # Parse time with today's date
-            timestamp_utc = parse_user_datetime(
-                data["departure_date"],
+            # Get journey to determine reference time
+            journey = await db.get_journey(data["journey_id"])
+            journey_events = await db.get_journey_events(data["journey_id"])
+
+            # Reference time is last checkpoint or departure
+            if journey_events:
+                reference_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
+            else:
+                reference_time = parse_db_timestamp(journey["departure_utc"])
+
+            # Parse checkpoint time intelligently (auto-detects next day)
+            timestamp_utc = parse_checkpoint_time(
                 message.text,
+                reference_time,
                 "Europe/Minsk"
             )
         except ValueError:
             await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ или нажмите '⏰ Сейчас'")
             return
 
-    # Validate timestamp order
+    # Validate timestamp order and max duration
     journey_events = await db.get_journey_events(data["journey_id"])
     if journey_events:
         last_event_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
 
-        if not validate_checkpoint_order(timestamp_utc, last_event_time):
-            await message.answer(
-                "❌ Неверное время: должно быть после предыдущей контрольной точки.\n"
-                "Пожалуйста, введите корректное время."
-            )
+        if not validate_checkpoint_order(timestamp_utc, last_event_time, max_hours=24):
+            # Check what went wrong
+            if timestamp_utc < last_event_time:
+                await message.answer(
+                    "❌ Неверное время: должно быть после предыдущей контрольной точки.\n"
+                    "Пожалуйста, введите корректное время."
+                )
+            else:
+                await message.answer(
+                    "❌ Неверное время: разница между чекпоинтами не может быть больше 24 часов.\n"
+                    "Пожалуйста, введите корректное время."
+                )
+            return
+    else:
+        # First checkpoint - validate against departure
+        journey = await db.get_journey(data["journey_id"])
+        departure_time = parse_db_timestamp(journey["departure_utc"])
+
+        if not validate_checkpoint_order(timestamp_utc, departure_time, max_hours=24):
+            if timestamp_utc < departure_time:
+                await message.answer(
+                    "❌ Неверное время: должно быть после времени отправления.\n"
+                    "Пожалуйста, введите корректное время."
+                )
+            else:
+                await message.answer(
+                    "❌ Неверное время: разница между отправлением и первым чекпоинтом не может быть больше 24 часов.\n"
+                    "Пожалуйста, введите корректное время."
+                )
             return
 
     # Save checkpoint event

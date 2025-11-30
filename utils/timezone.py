@@ -78,16 +78,58 @@ def parse_db_timestamp(timestamp_value) -> datetime:
     return to_utc(dt)
 
 
+def parse_checkpoint_time(
+    time_str: str,
+    reference_datetime: datetime,
+    user_tz: str = "Europe/Minsk"
+) -> datetime:
+    """
+    Parse checkpoint time intelligently determining the correct date.
+
+    If the time is earlier than reference time, assumes it's next day.
+    This handles cases like: departure 20:00 on Nov 27, checkpoint 01:43 → Nov 28 01:43
+
+    Args:
+        time_str: Time in format HH:MM
+        reference_datetime: Reference datetime (departure or previous checkpoint) in UTC
+        user_tz: User's timezone (default: Europe/Minsk for Belarus)
+
+    Returns:
+        UTC datetime with correct date
+    """
+    tz = pytz.timezone(user_tz)
+
+    # Convert reference to user timezone to get the correct date
+    ref_local = reference_datetime.astimezone(tz)
+
+    # Parse time with reference date
+    time_obj = datetime.strptime(time_str, "%H:%M").time()
+    candidate_dt = datetime.combine(ref_local.date(), time_obj)
+    candidate_dt = tz.localize(candidate_dt)
+
+    # If candidate is before reference, it's next day
+    if candidate_dt <= ref_local:
+        from datetime import timedelta
+        next_day = ref_local.date() + timedelta(days=1)
+        candidate_dt = datetime.combine(next_day, time_obj)
+        candidate_dt = tz.localize(candidate_dt)
+
+    # Convert to UTC
+    return candidate_dt.astimezone(timezone.utc)
+
+
 def validate_checkpoint_order(
     new_timestamp: datetime,
-    previous_timestamp: Optional[datetime]
+    previous_timestamp: Optional[datetime],
+    max_hours: int = 24
 ) -> bool:
     """
-    Validate that checkpoint timestamps are in order.
+    Validate that checkpoint timestamps are in order and within reasonable time.
 
     Args:
         new_timestamp: New checkpoint timestamp
         previous_timestamp: Previous checkpoint timestamp (or None if first)
+        max_hours: Maximum hours between checkpoints (default: 24)
 
     Returns:
         True if valid, False otherwise
@@ -99,5 +141,15 @@ def validate_checkpoint_order(
     new_utc = to_utc(new_timestamp)
     prev_utc = to_utc(previous_timestamp)
 
-    return new_utc >= prev_utc
+    # Must be after previous
+    if new_utc < prev_utc:
+        return False
+
+    # Must not be more than max_hours apart
+    from datetime import timedelta
+    max_delta = timedelta(hours=max_hours)
+    if (new_utc - prev_utc) > max_delta:
+        return False
+
+    return True
 
