@@ -79,7 +79,9 @@ async def cmd_start(message: Message, state: FSMContext):
         "2. Укажите время отправления\n"
         "3. Отмечайте контрольные точки по мере прохождения\n"
         "4. Просматривайте статистику и помогайте другим планировать поездки\n\n"
-        "⏰ Все время автоматически обрабатывается в UTC\n\n"
+        "⚡️ Быстрые команды:\n"
+        "/new — начать новую поездку\n"
+        "/statistics — посмотреть статистику\n\n"
         "Используйте меню внизу для навигации"
     )
 
@@ -108,15 +110,26 @@ async def cmd_new_journey(message: Message, state: FSMContext):
     keyboard = create_carrier_keyboard(carriers)
 
     await state.set_state(JourneyStates.choosing_carrier)
-    await message.answer(
+
+    # Send main accumulating message
+    main_msg = await message.answer(
+        "🆕 Новая поездка\n\n"
         "🚌 Выберите перевозчика:",
         reply_markup=keyboard
     )
+
+    # Save main message ID for future edits
+    await state.update_data(main_message_id=main_msg.message_id)
 
 
 @router.message(JourneyStates.choosing_carrier)
 async def process_carrier_choice(message: Message, state: FSMContext):
     """Process carrier selection."""
+    # Check if user wants to cancel
+    if message.text == "❌ Отменить поездку":
+        await cmd_cancel(message, state)
+        return
+
     carriers = await db.get_carriers()
     carrier = next((c for c in carriers if c["name"] == message.text), None)
 
@@ -127,18 +140,42 @@ async def process_carrier_choice(message: Message, state: FSMContext):
     await state.update_data(carrier_id=carrier["id"], carrier_name=carrier["name"])
     await state.set_state(JourneyStates.entering_departure_date)
 
-    # First, remove the reply keyboard
-    await message.answer(
-        f"✅ Выбран перевозчик: {carrier['name']}",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    # Get main message ID
+    data = await state.get_data()
+    main_message_id = data.get("main_message_id")
 
-    # Then show calendar for date selection
+    # Delete user's choice message
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    # Delete the initial question message
+    try:
+        await message.bot.delete_message(
+            chat_id=message.chat.id,
+            message_id=main_message_id
+        )
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+
+    # Create new message with accumulated data
     calendar = create_calendar()
-    await message.answer(
+    msg = await message.answer(
+        "🆕 Новая поездка\n\n"
+        f"✅ Перевозчик: {carrier['name']}\n\n"
         "📅 Выберите дату отправления:",
         reply_markup=calendar
     )
+    # Update main message ID
+    await state.update_data(main_message_id=msg.message_id)
+
+    # Send temporary message to remove keyboard, then delete it
+    try:
+        temp_msg = await message.answer(".", reply_markup=ReplyKeyboardRemove())
+        await temp_msg.delete()
+    except Exception:
+        pass
 
 
 # Calendar callback handlers
@@ -214,10 +251,16 @@ async def process_calendar_callback(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         print(f"✅ Callback answered")
 
+        # Get accumulated data
+        state_data = await state.get_data()
+        carrier_name = state_data.get("carrier_name", "")
+
         try:
-            # Edit the calendar message to show selected date and time picker
+            # Edit the main message with accumulated info
             print(f"📝 Trying to edit message...")
             await callback.message.edit_text(
+                "🆕 Новая поездка\n\n"
+                f"✅ Перевозчик: {carrier_name}\n"
                 f"✅ Дата выбрана: {day:02d}.{month:02d}.{year}\n\n"
                 "🕐 Выберите время отправления:",
                 reply_markup=time_keyboard
@@ -228,12 +271,16 @@ async def process_calendar_callback(callback: CallbackQuery, state: FSMContext):
             print(f"❌ Error editing message: {e}")
             print(f"📤 Sending new message instead...")
             await callback.message.delete()
-            await callback.bot.send_message(
+            msg = await callback.bot.send_message(
                 callback.message.chat.id,
+                "🆕 Новая поездка\n\n"
+                f"✅ Перевозчик: {carrier_name}\n"
                 f"✅ Дата выбрана: {day:02d}.{month:02d}.{year}\n\n"
                 "🕐 Выберите время отправления:",
                 reply_markup=time_keyboard
             )
+            # Update main message ID
+            await state.update_data(main_message_id=msg.message_id)
             print(f"✅ New message sent!")
 
 
@@ -266,19 +313,34 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     if time_str == "custom":
+        # Get accumulated data
+        state_data = await state.get_data()
+        carrier_name = state_data.get("carrier_name", "")
+        dep_date = state_data.get("departure_date", "")
+        year, month, day = dep_date.split("-")
+        date_formatted = f"{day}.{month}.{year}"
+
         # Switch to manual time entry
         try:
             await callback.message.edit_text(
+                "🆕 Новая поездка\n\n"
+                f"✅ Перевозчик: {carrier_name}\n"
+                f"✅ Дата выбрана: {date_formatted}\n\n"
                 "✏️ Введите время отправления вручную (ЧЧ:ММ):\n"
                 "Пример: 14:30"
             )
         except Exception:
             await callback.message.delete()
-            await callback.bot.send_message(
+            msg = await callback.bot.send_message(
                 callback.message.chat.id,
+                "🆕 Новая поездка\n\n"
+                f"✅ Перевозчик: {carrier_name}\n"
+                f"✅ Дата выбрана: {date_formatted}\n\n"
                 "✏️ Введите время отправления вручную (ЧЧ:ММ):\n"
                 "Пример: 14:30"
             )
+            # Update main message ID
+            await state.update_data(main_message_id=msg.message_id)
         return
 
     # Process selected time
@@ -312,35 +374,40 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     await state.set_state(JourneyStates.choosing_initial_timezone)
     keyboard = create_timezone_keyboard(include_cancel=True)
 
+    # Format date nicely
+    dep_date = data["departure_date"]
+    year, month, day = dep_date.split("-")
+    date_formatted = f"{day}.{month}.{year}"
+
+    # Delete previous message (can't edit with ReplyKeyboardMarkup)
     try:
-        await callback.message.edit_text(
-            f"✅ Поездка создана!\n"
-            f"🚌 Перевозчик: {data['carrier_name']}\n"
-            f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
-            f"🌍 Выберите вашу текущую таймзону:\n"
-            f"(Вы сможете изменить её в любой момент)"
-        )
-        await callback.message.answer(
-            "Выберите таймзону:",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        print(f"Error editing message: {e}")
         await callback.message.delete()
-        await callback.bot.send_message(
-            callback.message.chat.id,
-            f"✅ Поездка создана!\n"
-            f"🚌 Перевозчик: {data['carrier_name']}\n"
-            f"📅 Отправление: {data['departure_date']} {time_str}\n\n"
-            f"🌍 Выберите вашу текущую таймзону:\n"
-            f"(Вы сможете изменить её в любой момент)",
-            reply_markup=keyboard
-        )
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+
+    # Send new message
+    msg = await callback.bot.send_message(
+        callback.message.chat.id,
+        "🆕 Новая поездка\n\n"
+        f"✅ Перевозчик: {data['carrier_name']}\n"
+        f"✅ Дата: {date_formatted}\n"
+        f"✅ Время: {time_str}\n\n"
+        f"🌍 Выберите вашу текущую таймзону:\n"
+        f"(Вы сможете изменить её в любой момент)",
+        reply_markup=keyboard
+    )
+    # Update main message ID
+    await state.update_data(main_message_id=msg.message_id)
 
 
 @router.message(JourneyStates.entering_departure_time)
 async def process_departure_time(message: Message, state: FSMContext):
     """Process departure time (manual text input)."""
+    # Check if user wants to cancel
+    if message.text == "❌ Отменить поездку":
+        await cmd_cancel(message, state)
+        return
+
     try:
         datetime.strptime(message.text, "%H:%M")
         data = await state.get_data()
@@ -373,14 +440,39 @@ async def process_departure_time(message: Message, state: FSMContext):
         await state.set_state(JourneyStates.choosing_initial_timezone)
         keyboard = create_timezone_keyboard(include_cancel=True)
 
-        await message.answer(
-            f"✅ Поездка создана!\n"
-            f"🚌 Перевозчик: {data['carrier_name']}\n"
-            f"📅 Отправление: {data['departure_date']} {message.text}\n\n"
+        # Format date nicely
+        dep_date = data["departure_date"]
+        year, month, day = dep_date.split("-")
+        date_formatted = f"{day}.{month}.{year}"
+
+        # Delete user's input message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Get main message ID and delete it
+        main_message_id = data.get("main_message_id")
+        try:
+            await message.bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=main_message_id
+            )
+        except Exception as e:
+            print(f"Error deleting message: {e}")
+
+        # Send new message (can't edit with ReplyKeyboardMarkup)
+        msg = await message.answer(
+            "🆕 Новая поездка\n\n"
+            f"✅ Перевозчик: {data['carrier_name']}\n"
+            f"✅ Дата: {date_formatted}\n"
+            f"✅ Время: {message.text}\n\n"
             f"🌍 Выберите вашу текущую таймзону:\n"
             f"(Вы сможете изменить её в любой момент)",
             reply_markup=keyboard
         )
+        # Update main message ID
+        await state.update_data(main_message_id=msg.message_id)
 
     except ValueError:
         await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30)")
@@ -440,6 +532,11 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
 @router.message(JourneyStates.choosing_initial_timezone)
 async def process_initial_timezone_selection(message: Message, state: FSMContext):
     """Process initial timezone selection after journey creation."""
+    # Check if user wants to cancel
+    if message.text == "❌ Отменить поездку":
+        await cmd_cancel(message, state)
+        return
+
     # Check if valid timezone selected
     if message.text in TIMEZONE_MAP:
         selected_tz = TIMEZONE_MAP[message.text]
@@ -447,10 +544,41 @@ async def process_initial_timezone_selection(message: Message, state: FSMContext
         # Save timezone
         await state.update_data(user_timezone=selected_tz)
 
-        await message.answer(
-            f"✅ Таймзона установлена: {message.text}\n\n"
+        # Delete user's choice message
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        # Get accumulated data
+        data = await state.get_data()
+        main_message_id = data.get("main_message_id")
+
+        # Format date nicely
+        dep_date = data["departure_date"]
+        year, month, day = dep_date.split("-")
+        date_formatted = f"{day}.{month}.{year}"
+
+        # Delete old message (can't edit ReplyKeyboardMarkup messages)
+        try:
+            await message.bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=main_message_id
+            )
+        except Exception as e:
+            print(f"Error deleting message: {e}")
+
+        # Send new message with summary
+        msg = await message.answer(
+            "🆕 Новая поездка\n\n"
+            f"✅ Перевозчик: {data['carrier_name']}\n"
+            f"✅ Дата: {date_formatted}\n"
+            f"✅ Время: {data['departure_time']}\n"
+            f"✅ Таймзона: {message.text}\n\n"
             f"Теперь отмечайте контрольные точки по мере прохождения."
         )
+        # Update main message ID
+        await state.update_data(main_message_id=msg.message_id)
 
         # Move to first checkpoint
         await start_next_checkpoint(message, state)
@@ -560,6 +688,11 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
     # Check for timezone change request
     if message.text == "🌍 Сменить таймзону":
         await cmd_change_timezone(message, state)
+        return
+
+    # Check if user wants to cancel
+    if message.text == "❌ Отменить поездку":
+        await cmd_cancel(message, state)
         return
 
     # Get timezone selected by user
@@ -760,12 +893,18 @@ async def confirm_cancel_yes(callback: CallbackQuery, state: FSMContext):
     await state.clear()
 
     keyboard = create_main_menu_keyboard(has_active_journey=False)
-    await callback.message.edit_text(
-        "❌ Поездка отменена.\n\n"
-        "Используйте '🆕 Новая поездка' чтобы начать отслеживание."
-    )
-    await callback.message.answer(
-        "Главное меню:",
+
+    # Delete confirmation message
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    # Send new message with keyboard
+    await callback.bot.send_message(
+        chat_id=callback.message.chat.id,
+        text="❌ Поездка отменена.\n\n"
+             "Используйте '🆕 Новая поездка' чтобы начать отслеживание.",
         reply_markup=keyboard
     )
 
