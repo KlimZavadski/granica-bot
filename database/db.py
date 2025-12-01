@@ -110,6 +110,7 @@ class Database:
         checkpoint_id: str,
         timestamp_utc: datetime,
         source: str = "manual",
+        user_timezone: str = "Europe/Minsk",
         lat: Optional[float] = None,
         lon: Optional[float] = None
     ) -> Dict[str, Any]:
@@ -119,6 +120,7 @@ class Database:
             "checkpoint_id": checkpoint_id,
             "timestamp_utc": timestamp_utc.isoformat(),
             "source": source,
+            "user_timezone": user_timezone,
             "lat": lat,
             "lon": lon
         }

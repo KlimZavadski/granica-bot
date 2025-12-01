@@ -532,9 +532,11 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
                 event["checkpoints"]["name"],
                 event["checkpoints"]["name"]
             )
+            # Use timezone saved with the event
+            event_tz = event.get("user_timezone", "Europe/Minsk")
             time_str = format_datetime_for_user(
                 parse_db_timestamp(event["timestamp_utc"]),
-                current_tz
+                event_tz
             )
             message_text += f"{i+1}. {cp_name}\n"
             message_text += f"   ⏰ {time_str}\n"
@@ -788,12 +790,13 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
                 )
             return
 
-    # Save checkpoint event
+    # Save checkpoint event with current user timezone
     await db.create_journey_event(
         journey_id=data["journey_id"],
         checkpoint_id=data["current_checkpoint_id"],
         timestamp_utc=timestamp_utc,
-        source="manual"
+        source="manual",
+        user_timezone=user_timezone
     )
 
     # Delete user's input message
@@ -838,8 +841,11 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
             event["checkpoints"]["name"],
             event["checkpoints"]["name"]
         )
+        # Use timezone saved with the event
+        event_tz = event.get("user_timezone", "Europe/Minsk")
         time_str = format_datetime_for_user(
-            parse_db_timestamp(event["timestamp_utc"])
+            parse_db_timestamp(event["timestamp_utc"]),
+            event_tz
         )
         summary_text += f"{i+1}. {checkpoint_name}\n   ⏰ {time_str}\n"
 
