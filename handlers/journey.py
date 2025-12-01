@@ -511,22 +511,67 @@ async def start_next_checkpoint(message_or_callback, state: FSMContext):
     current_tz = data.get("user_timezone", "Europe/Minsk")
     tz_display = get_timezone_display(current_tz)
 
+    # Get journey events for history
+    journey_id = data.get("journey_id")
+    events = await db.get_journey_events(journey_id)
+
+    # Build message with history
+    message_text = f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n"
+    message_text += f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас'.\n\n"
+
+    # Add history if there are previous checkpoints
+    if events:
+        message_text += "📝 История:\n\n"
+
+        # Get journey departure time for first checkpoint duration
+        journey = await db.get_journey(journey_id)
+        departure_time = parse_db_timestamp(journey["departure_utc"])
+
+        for i, event in enumerate(events):
+            cp_name = CHECKPOINT_NAMES.get(
+                event["checkpoints"]["name"],
+                event["checkpoints"]["name"]
+            )
+            time_str = format_datetime_for_user(
+                parse_db_timestamp(event["timestamp_utc"]),
+                current_tz
+            )
+            message_text += f"{i+1}. {cp_name}\n"
+            message_text += f"   ⏰ {time_str}\n"
+
+            # Calculate duration from previous or from departure
+            curr_time = parse_db_timestamp(event["timestamp_utc"])
+            if i == 0:
+                # First checkpoint - calculate from departure
+                duration = curr_time - departure_time
+                minutes = int(duration.total_seconds() / 60)
+                message_text += f"   ⌛ +{minutes} мин от отправления\n"
+            else:
+                # Calculate from previous checkpoint
+                prev_time = parse_db_timestamp(events[i-1]["timestamp_utc"])
+                duration = curr_time - prev_time
+                minutes = int(duration.total_seconds() / 60)
+                message_text += f"   ⌛ +{minutes} мин от предыдущей\n"
+            message_text += "\n"
+
+    message_text += f"🌍 Таймзона: {tz_display}"
+
     # Handle both Message and CallbackQuery
     if isinstance(message_or_callback, Message):
-        await message_or_callback.answer(
-            f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
-            f"🌍 Таймзона: {tz_display}\n"
-            f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+        msg = await message_or_callback.answer(
+            message_text,
             reply_markup=keyboard
         )
+        # Save checkpoint message ID for deletion
+        await state.update_data(checkpoint_message_id=msg.message_id)
     else:  # CallbackQuery
-        await message_or_callback.bot.send_message(
+        msg = await message_or_callback.bot.send_message(
             message_or_callback.message.chat.id,
-            f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
-            f"🌍 Таймзона: {tz_display}\n"
-            f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
+            message_text,
             reply_markup=keyboard
         )
+        # Save checkpoint message ID for deletion
+        await state.update_data(checkpoint_message_id=msg.message_id)
 
 
 @router.message(JourneyStates.choosing_initial_timezone)
@@ -613,28 +658,11 @@ async def process_timezone_change(message: Message, state: FSMContext):
             )
             return
 
-        # Map checkpoint to state
-        state_mapping = {
-            0: JourneyStates.checkpoint_approaching_border,
-            1: JourneyStates.checkpoint_entering_1,
-            2: JourneyStates.checkpoint_passport_1,
-            3: JourneyStates.checkpoint_entering_2,
-            4: JourneyStates.checkpoint_passport_2,
-            5: JourneyStates.checkpoint_leaving_2,
-        }
+        # Show confirmation
+        await message.answer(f"✅ Таймзона изменена: {message.text}")
 
-        await state.set_state(state_mapping[checkpoint_index])
-
-        checkpoint = checkpoints[checkpoint_index]
-        checkpoint_name = CHECKPOINT_NAMES.get(checkpoint["name"], checkpoint["name"])
-        keyboard = create_checkpoint_keyboard()
-
-        await message.answer(
-            f"✅ Таймзона изменена: {message.text}\n\n"
-            f"📍 Контрольная точка {checkpoint_index + 1}/6\n{checkpoint_name}\n\n"
-            f"⏰ Введите время (ЧЧ:ММ) или нажмите '⏰ Сейчас':",
-            reply_markup=keyboard
-        )
+        # Show checkpoint with full history using the same logic
+        await start_next_checkpoint(message, state)
     else:
         await message.answer(
             "❌ Пожалуйста, выберите таймзону из предложенных вариантов."
@@ -699,22 +727,27 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
     user_timezone = data.get("user_timezone", "Europe/Minsk")
 
     try:
-        # Get journey to determine reference time
-        journey = await db.get_journey(data["journey_id"])
-        journey_events = await db.get_journey_events(data["journey_id"])
-
-        # Reference time is last checkpoint or departure
-        if journey_events:
-            reference_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
+        # Check if user pressed "Now" button
+        if message.text == "⏰ Сейчас":
+            # Use current time in UTC
+            timestamp_utc = now_utc()
         else:
-            reference_time = parse_db_timestamp(journey["departure_utc"])
+            # Get journey to determine reference time
+            journey = await db.get_journey(data["journey_id"])
+            journey_events = await db.get_journey_events(data["journey_id"])
 
-        # Parse checkpoint time intelligently (auto-detects next day)
-        timestamp_utc = parse_checkpoint_time(
-            message.text,
-            reference_time,
-            user_timezone
-        )
+            # Reference time is last checkpoint or departure
+            if journey_events:
+                reference_time = parse_db_timestamp(journey_events[-1]["timestamp_utc"])
+            else:
+                reference_time = parse_db_timestamp(journey["departure_utc"])
+
+            # Parse checkpoint time intelligently (auto-detects next day)
+            timestamp_utc = parse_checkpoint_time(
+                message.text,
+                reference_time,
+                user_timezone
+            )
     except ValueError:
         await message.answer("❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30)")
         return
@@ -763,6 +796,23 @@ async def process_checkpoint_time(message: Message, state: FSMContext):
         source="manual"
     )
 
+    # Delete user's input message
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    # Delete checkpoint question message
+    checkpoint_message_id = data.get("checkpoint_message_id")
+    if checkpoint_message_id:
+        try:
+            await message.bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=checkpoint_message_id
+            )
+        except Exception:
+            pass
+
     # Move to next checkpoint
     await state.update_data(current_checkpoint_index=data["current_checkpoint_index"] + 1)
     await start_next_checkpoint(message, state)
@@ -775,6 +825,10 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
 
     # Get all events
     events = await db.get_journey_events(journey_id)
+
+    # Get journey for departure time
+    journey = await db.get_journey(journey_id)
+    departure_time = parse_db_timestamp(journey["departure_utc"])
 
     # Calculate durations
     summary_text = "✅ Поездка завершена!\n\n📊 Итоги:\n\n"
@@ -789,9 +843,16 @@ async def show_journey_summary(message_or_callback, state: FSMContext):
         )
         summary_text += f"{i+1}. {checkpoint_name}\n   ⏰ {time_str}\n"
 
-        if i > 0:
+        # Calculate duration from previous or from departure
+        curr_time = parse_db_timestamp(event["timestamp_utc"])
+        if i == 0:
+            # First checkpoint - calculate from departure
+            duration = curr_time - departure_time
+            minutes = int(duration.total_seconds() / 60)
+            summary_text += f"   ⌛ +{minutes} мин от отправления\n"
+        else:
+            # Calculate from previous checkpoint
             prev_time = parse_db_timestamp(events[i-1]["timestamp_utc"])
-            curr_time = parse_db_timestamp(event["timestamp_utc"])
             duration = curr_time - prev_time
             minutes = int(duration.total_seconds() / 60)
             summary_text += f"   ⌛ +{minutes} мин от предыдущей\n"
